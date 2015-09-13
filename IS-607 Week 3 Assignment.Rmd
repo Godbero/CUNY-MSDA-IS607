@@ -1,0 +1,153 @@
+---
+title: "IS607 Week 3 Assignment"
+author: "Robert Godbey"
+date: "September 11, 2015"
+output: html_document
+---
+
+# Introduction
+
+Your task is to choose one data set, then study the data and its associated description of the data (i.e. "data dictionary"). You should take the data, and create an R data frame with a subset of the columns (and if you like rows) in the data set. Your deliverable is the R code to perform these transformation tasks.
+
+The data set I will examine and transform is the "Pittsburgh Bridges" data set from the archive at UC Irvine. Here is the data description or dictionary as given in the file "bridge.names.txt.
+
+## Data Description
+
+7. Attribute Information:  
+
+        The type field state whether a property is continuous/integer (c) or nominal (n).
+
+        For properties with c,n type, the range of continuous numbers is given first
+        and the possible values of the nominal follow the semi-colon.
+
+
+Column | Name |Type | Possible Values | Comments |
+-------|------|-----|-----------------|----------|
+ 1 | IDENTIF | - | - | Identifier of the examples |
+ 2 | RIVER | n | A, M, O | 
+ 3 | LOCATION | n | 1 to 52 |
+ 4 | ERECTED | c,n | 1818-1986 ; CRAFTS, EMERGING, MATURE, MODERN |
+ 5 | PURPOSE | n | WALK, AQUEDUCT, RR, HIGHWAY |
+ 6 | LENGTH | c,n |804-4558 ; SHORT, MEDIUM, LONG |
+ 7 | LANES | c,n | 1, 2, 4, 6 ; 1, 2, 4, 6 |
+ 8 | CLEAR-G |n | N, G |
+ 9 | T-OR-D |n | THROUGH, DECK |
+10 | MATERIAL |n | WOOD, IRON, STEEL |
+11 | SPAN | n | SHORT, MEDUIM, LONG |
+12 | REL-L | n | S, S-F, F |
+13 | TYPE | n | WOOD, SUSPEN, SIMPLE-T, ARCH, CANTILEV, CONT-T |
+
+There are two versions of the data file as described below.
+
+4. Number of instances: 108
+
+5. Relevant Information:
+   
+        There are two versions to the database:
+
+                V1 contains the original examples and
+
+                V2 contains descriptions after discretizing numeric properties.
+
+
+# Data Examination
+
+We will start by examining both data sets to see if we can discern the difference "discretizing numeric properties" makes to the data sets. We do this by reading in both versions of the data file and putting them into separate dataframes. We then run the Structure Function on each one and use View to browse the data.
+
+### Note on Example Code
+
+I learned a few things loading data from GitHub. I found the "raw" button in GitHub and used it for the first time. This explained the word raw in the path of the example. I also found that if I used the example as written (replacing my path), I would lose an observation. I believe this is because the example assumes a header row, so I was losing the first row. This can be solved by adding "header = FALSE" to the read statement. I also added "na.strings = "?"" to my read and decided to write it all as one statement. A function like getURL() that returns a full path when given a website and a file name would be of great use for a data repository site. However, this function seems to require the full path, so only seems to save space in the read statement.
+
+**Load Data From GitHub Example**
+
+library(RCurl)
+
+x <- getURL("https://raw.github.com/aronlindberg/latent_growth_classes/master/LGC_data.csv")
+
+y <- read.csv(text = x)
+
+```{r}
+library(RCurl)
+
+df1 <- read.csv("https://raw.githubusercontent.com/Godbero/CUNY-MSDA-IS607/master/bridges.data.version1.txt", header = FALSE, na.strings = "?")
+
+df2 <- read.csv("https://raw.githubusercontent.com/Godbero/CUNY-MSDA-IS607/master/bridges.data.version2.txt", header = FALSE, na.strings = "?")
+
+str(df1)
+str(df2)
+```
+
+Looking at the two files we see that both have 108 Observations and 13 Variables, so "discretizing numeric properties" did not change the number of fields. Looking at the results of the Structure() function we see some difference in the variables, which I will summarize in the following table.
+
+Column | Name | Type df1 | Type df2 | Comments |
+-------|------|----------|----------|----------|
+ 1 | IDENTIF | - | - | Identifier of the examples, E1, E2 ... |
+ 2 | RIVER | Factor | Factor | 4 levels A, M, O, Y |
+ 3 | LOCATION | num | num | 1 to 52 |
+ 4 | ERECTED | int | Factor | df1 = 1818-1986; df2 = CRAFTS, EMERGING, MATURE, MODERN |
+ 5 | PURPOSE | Factor | Factor | WALK, AQUEDUCT, RR, HIGHWAY |
+ 6 | LENGTH | int | Factor | df1 = 804-4558; df2 = SHORT, MEDIUM, LONG |
+ 7 | LANES | int | int | 1, 2, 4, 6 |
+ 8 | CLEAR-G | Factor | Factor |2 levels N, G |
+ 9 | T-OR-D | Factor | Factor | 2 levels THROUGH, DECK |
+10 | MATERIAL | Factor | Factor | 3 levels WOOD, IRON, STEEL |
+11 | SPAN | Factor | Factor | 3 levels SHORT, MEDUIM, LONG |
+12 | REL-L | Factor | Factor | 3 levels S, S-F, F |
+13 | TYPE | Factor | Factor | 7 levels WOOD, SUSPEN, SIMPLE-T, ARCH, CANTILEV, CONT-T |
+
+Two fields are different between the two versions of the file. Column 4, Erected is a date stored as an integer value in dataframe 1 (df1) and Erected is a 4-level factor value in df2, seemingly a time period name (e.g. this bridge was erected in the Crafts era).
+
+The other field is column 6, Length, which is an integer value in df1 (presumingly a measurement in feet) and a 3-level factor in df2, Short, Medium, Long. I feel like I may have lost something with the time-period factors for Erected and not so much with short. medium and long.
+
+Before I list out what fields I want to keep and detail my data transformation I have one more mystery to solve. Why does column 13, Type, have 7 levels and only list 6 labels. I thought it might be NA, but that doesn't seem to be it. Running the Summary() should help clear this up.
+
+
+```{r}
+summary(df1, 10)
+
+```
+
+This shows that there is one NIL in the data for v13 that was not listed as a type in the data description. It is probably not a real type an should be counted as an NA.
+
+I would like a data set that has the following fields. We will do this in the next section.
+
+* River, replace code with name
+
+* Erected - Date, from version 1, keep as number
+
+* Purpose, keep as factor
+
+* Lanes, make into a factor
+
+* Material, keep as factor
+
+* Erected - Period, from version 2, keep as factor
+
+
+# Data Transformation
+
+We will start by taking a subset of df1 to start building our final dataframe. We will add the column from df2 for the Erected Time Period. We then need to replace the river names and change Lanes to a factor. We will run the Structure() and Summary functions on our new dataframe to wrap up.
+
+To change the river names from the codes A, M, O to Allegheny, Monongahela and Ohio we need to have Allegheny, Monongahela and Ohio levels for the factor. There is a levels command that allows you to add levels, but I decided to covert the codes to character values, change the names and then convert back. I also discovered a Y code in River that is not addressed in the data description and does not refer to a Pittsburgh river, creek, or run I could find. It probably means NA in some way.
+
+
+```{r}
+df <- subset(df1, select = c(V2, V4, V5, V7, V10))
+df <- cbind(df, df2$V4)
+fields <- c("River", "Date Erected", "Purpose", "Lanes", "Material", "Period Erected")
+colnames(df) <- fields
+
+river <- as.character(df$River)
+river[river == "A"] <- "Allegheny"
+river[river == "M"] <- "Monongahela"
+river[river == "O"] <- "Ohio"
+df$River <- as.factor(river)
+
+df$Lanes <- as.factor(df$Lanes)
+
+str(df)
+summary(df)
+```
+
+This accomplished what I set out to do. I like that the summary function can easily tell us how many bridges of each lane type there are and that leaving Date Erected a number gives us useful information in minimum. maximum and median.
+
