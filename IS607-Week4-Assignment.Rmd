@@ -1,0 +1,139 @@
+---
+title: "IS607 Week 4 Assignment"
+author: "Robert Godbey"
+date: "September 16, 2015"
+output: html_document
+---
+
+## Week 4 Assignment
+
+Please create an R Markdown file that provides a solution for #4, #5 and #6 in *Automated Data Collection in R*, chapter 8.  Publish the R Markdown file to rpubs.com, and include links to your R Markdown file (in GitHub) and your rpubs.com URL In your assignment solution.
+
+Due end of day Sunday September 20th.
+
+
+## 4. Describe the types of strings that conform to the following regular expressions and construct an example that is matched by the regular expression.
+
+### (a) [0-9]+\\\\$
+
+This means any number of digits in a sequence (there needs to be at least 1) followed or ending in a dollar-sign. We expect 1, 2, 3 and so on number of digits to show up if ending in a $, but a $ by itself, at the beginning of digits, following letters, etc. should not show up.
+
+We test this by setting teststr to the following: "123\$ 9128 \$1130 9876\$ 77\$ 01$ 8\$ \$Homer \$ Simpson\$". We expect 123\$, 9876\$, 77\$, 01\$, and 8\$ to be extracted. Let's test that now.
+
+```{r}
+library(stringr)
+teststr <- "123$ 9128 $1130 9876$ 77$ 01$ 8$ $Homer $ Simpson$"
+prob4a <- unlist(str_extract_all(teststr, "[0-9]+\\$"))
+prob4a
+```
+
+
+### (b) \\\\b[a-z]{1,4}\\\\b
+
+This means select any "word" that has a lowercase letter as the first, second, third or fourth character. So, the shortest match is a single lowercase letter and the longest is 4 lowercase letters. We set the following string to teststr to test: "A b be car doghouse b6 elks figtree brewpub Gate gr8t 9". We expect b, be, car, elks, to be extracted. Let's test that now.
+
+```{r}
+teststr <- "A b be car doghouse b6 elks figtree brewpub Gate gr8t 9"
+prob4b <- unlist(str_extract_all(teststr, "\\b[a-z]{1,4}\\b"))
+prob4b
+```
+
+
+### (c) .*?\\\\.txt$
+
+The period by itself means any character, the * means the preceding item will be matched zero or more times, the ? mark means the preceding item is optional and will be matched at most once, and \\.txt$ means ending in ".txt". This seems to add up to any string that ends in .txt no matter what is in front of it. I tried different ordering of the following string including ending with a.txt, car.txt, gatehouse.txt, 1492, fruit., and .txt. All the .txt examples returned the whole string, all the others zero.
+
+```{r}
+teststr <- "a.txt b.txt cat.txt catfood.txt d E fruit. 999.txt 007.txt Hohoho 1492 gatehouse .txt"
+prob4c <- unlist(str_extract_all(teststr, ".*?\\.txt$"))
+prob4c
+```
+
+
+### (d) \\\\d{2}/\\\\d{2}/\\\\d{4}
+
+Based on the example walkthrough in the text I was able to discern that this is close to an American date format with 99/99/9999. This brings me to two questions.
+
+1. I thought \\ meant literally, so \\. means a real period not any character. Why doesn't \\d mean a literal "d" as opposed to digit? The number of \\ is confusing me.
+
+2. If we wanted to make this "date field" even better by limiting the values of the first 2 digits between 1 and 12 and the second two between 1 and 31, do we have to do this one digit at a time, or can we do the pair together?
+
+```{r}
+teststr <- "08/15/1999 007 12/06/1988 12121234 99/99/9999 aa/bb/cccc xx-yy-zz 12-25-2015 09 16 2015"
+prob4d <- unlist(str_extract_all(teststr, "\\d{2}/\\d{2}/\\d{4}"))
+prob4d
+```
+
+
+### (e) <(.+?)>.+?</\\\\1>
+
+This one took me a while to figure out. The pattern we are looking for is \<any list of characters\>any list of characters\</the first list of characters again\>. I use Homer in the test string and repeated twice to insure I had it.
+
+```{r}
+teststr <- "<Homer>Simpson</Homer><Homer>Simpson</Homer>"
+prob4e <- unlist(str_extract_all(teststr, "<(.+?)>.+?</\\1>"))
+prob4e
+```
+
+
+## 5. Rewrite the expression [0-9]+\\\\$ in a way that all elements are altered but the expression performs the same task.
+
+This is the same expression as 4.a.(any digit combo ending in \$), so we can use the same test string and expect the same results. We set teststr to the following: "123\$ 9128 \$1130 9876\$ 77\$ 01\$ 8\$ \$Homer \$ Simpson\$" and expect 123\$, 9876\$, 77\$, 01\$, and 8\$ to be extracted. Let's test that now.
+
+I found two ways to do it, but none that eliminate the + sign.
+
+[0-9]+\\\\$ = [[:digit:]]+[\$] = \\\\d+[\$]
+
+```{r}
+teststr <- "123$ 9128 $1130 9876$ 77$ 01$ 8$ $Homer $ Simpson$"
+prob4a <- unlist(str_extract_all(teststr, "[0-9]+\\$"))
+prob51 <- unlist(str_extract_all(teststr, "[[:digit:]]+[$]"))
+prob52 <- unlist(str_extract_all(teststr, "\\d+[$]"))
+prob4a
+prob51
+prob52
+```
+
+
+## 6. Consider the mail address chunkylover53[at]aol[dot]com.
+
+### (a) Transform the mail address into a standard mail format using regular expressions.
+
+The trick was getting all the literals to change. Turns out \\\\[ does the left bracket and so on. I knew \\\\. worked for dot. I did it in two steps, replacing the [at] first and the [dot] second.
+
+```{r}
+teststr <- "chunkylover53[at]aol[dot]com"
+prob6a <- str_replace(teststr, "\\[at\\]", "@")
+prob6a
+prob6a <- str_replace(prob6a, "\\[dot\\]", "\\.")
+prob6a
+```
+
+
+### (b) Imagine we are trying to extract the digits in the mail address. To do so we write the expression [:digit:]. Explain why this fails and correct the expression.
+
+If use str_extract() with [:digit:] you will get the first digit it finds, which in this case is "5". If we change the function to str_extract_all() you get "5" and "3" and if there were any more numbers they would follow. In this case you get all the numbers in the order they are found, but they are separate elements and you will not know if the number is 53 or 5 followed later by a 3. To solve that problem you can use str_extract() with [:digit:]+, which returns "53" in this case. I will add a few more digits to our example to show the differences. I discovered that str_extract(teststr, "[:digit:]+") returns on th first set of digits, we str_extract_all to get sets.
+
+```{r}
+teststr <- "chun1ky2lover53[at]aol77[dot]909com"
+prob6b1 <- str_extract(teststr, "[:digit:]")
+prob6b2 <- str_extract_all(teststr, "[:digit:]")
+prob6b3 <- str_extract(teststr, "[:digit:]+")
+prob6b4 <- str_extract_all(teststr, "[:digit:]+")
+prob6b1
+prob6b2
+prob6b3
+prob6b4
+```
+
+
+### (c) Instead of using the predefined character classes, we would like to use the predefined symbols to extract the digits in the mail address. To do so we write the expression \\\\D. Explain why this fails and correct the expression.
+
+In the table on page 204 (Table 8.3) we see that \\d = [[:digits:]], while \\D = No digits = [^[:digits:]]. we fix it below.
+
+```{r}
+teststr <- "chun1ky2lover53[at]aol77[dot]909com"
+prob6c <- str_extract_all(teststr, "\\d+")
+prob6c
+```
+
