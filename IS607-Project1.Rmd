@@ -1,0 +1,163 @@
+---
+title: "IS607 Project 1"
+author: "Robert Godbey"
+date: "September 18, 2015"
+output: html_document
+---
+# The Story (or Assignment)
+
+In this project, you're given a text file with chess tournament results where the information has some structure. Your job is to create an R Markdown file that generates a .CSV file (that could for example be imported into a SQL database) with the following information for all of the players:
+
+Player's Name, Player's State, Total Number of Points, Player's Pre-Rating, and Average Pre Chess Rating of Opponents
+
+For the first player, the information would be:
+
+Gary Hua, ON, 6.0, 1794, 1605
+
+1605 was calculated by using the pre-tournament opponents' ratings of 1436, 1563, 1600, 1610, 1649, 1663, 1716, and dividing by the total number of games played.
+
+If you have questions about the meaning of the data or the results, please post them on the discussion forum. Data science, like chess, is a game of back and forth.
+
+The chess rating system (invented by a Minnesota statistician named Arpad Elo) has been used in many other contexts, including assessing relative strength of employment candidates by human resource departments.
+
+## Excerpt From Text File
+
+We see the format of the data in this excerpt. Each record is for one player and is comprised of two lines of information about seven rounds of playing chess.
+
+![](https://raw.githubusercontent.com/Godbero/CUNY-MSDA-IS607/master/datasample.png)
+
+## Data Inspection
+
+Looking closely we see that we have very defined data formatted in an interesting way. The fields or observations per record are as follows.
+
+* Player Number or Pair Num: integer from 1 to 64
+* Player Name: First Last as string in all caps
+* Total Points or Total Pts: decimal from 0.0 to 7.0, observed 1.0 to 6.0
+* Round 1: code-space-opponent-PairNum; Code = W, L, D, B, H, U; e.g., W 39 = win against player 39
+* Round 2: same format as above; W = win, L = loss, D = Draw, B = bye, H =  , U =   , X = 
+* Round 3 through 7: we have 7 rounds of Code-space-number, except for H,U, & X when number is blank
+* State: 2 character code for US state or Canadian province; on second line as formatted
+
+All the fields to this point were separated by the pipe character "|". State would be preceded by a newline, but is separated by | from USCF ID.
+
+* USCF ID: United States Chess Federation ID number; 8 digits followed by a space then slash "/"
+* Pre-Rating: is a 3 to 4 digit integer; it follows the USCF ID like this / R: 9999, and / R: 9999P99
+* Post-Rating: is a 3 to 4 digit integer; it follows Pre like this ->1111P11
+
+Looking at the data we see we have 10 columns or fields separated by the pipe "|" character on each line and two lines comprise a record for one player. The column that contains the player's name on the first line contains USCF ID, Pre-rating and Post rating. The rest of the information on line 2, which corresponds to the 7 rounds of play above, is of no interest to us.
+
+We have 14 fields or observations that are of interest that are spread across two lines of the file and separated into 12 columns by the pipe character. I also believe all the columns have fixed width as formatted.
+
+
+# Reading The Files
+
+Bringing the file into R in a meaningful way, that is a way that makes creating the output we need, was not straight forward. We have several different functions that read files and these function all have several options. I tried several.
+
+I tried read.table first, which reads in the file completely and looked like the original file. It reads in each line as 1 field, keeps the separator (- - - - - - - - -) lines, and makes a weird dataframe.
+
+```{r}
+lines <- read.table("https://raw.githubusercontent.com/Godbero/CUNY-MSDA-IS607/master/tournamentinfo.txt", header=FALSE, sep="\n")
+lines
+str(lines)
+```
+
+This did not seem that helpful, so I tried other functions. The readLines function seemed to do the same thing, but makes a character vector instead of a dataframe. And, it did give me a warning message too, that I was not sure how to interpret.
+
+```{r}
+lines <- readLines("https://raw.githubusercontent.com/Godbero/CUNY-MSDA-IS607/master/tournamentinfo.txt")
+lines
+str(lines)
+```
+
+In working with read.table and readLines I found I could delete the separator rows with commands like this lines <- lines[-c(1, 2, 3, 4, 7, 10, 13, 16,...), ] (for read.table), which worked for this size file, but was still tedious. I did not find an easy on read or one-command way to combine line-pairs or separate field values.
+
+I moved on to scan with high hopes for the multi.lines option. Here is what scan did for me. I had to play around a lot with the what= list. I seemed to need to explicitly list the newline at the end of line 1 and set flush to true to finish the second line. I thought I had it with a list for each field, however something happened after player 28.
+
+```{r}
+tmp <- scan("https://raw.githubusercontent.com/Godbero/CUNY-MSDA-IS607/master/tournamentinfo.txt", multi.line=TRUE, sep = "|", what=list('', '', '', '', '', '', '', '', '', '', '\n', '', ''), skip= 4, flush = TRUE, comment.char = "-")
+str(tmp)
+tmp[1]
+tmp[2]
+```
+
+In the end I think I found the problem with scan and recreated it with read.delim, which is the function I ultimately went with to read in the file. You will see below that I was able to create a dataframe with 10 columns using the pipe as the separator. I set header to false and skip over the first 4 lines of non-data. Setting the comment field to "-" got rid of all separating lines like it did for scan.
+
+This comment field trick to get rid of the "- - - - - - -" lines is what caused the problem with scan and with read.delim. It was just a little more contained in read.delim. You will see below that player 28 has a hyphenated last name. Since my comment field character is essentially a hyphen, it ignores it and everything else on the line. In scan it threw the rest of the data off after player 28. In read.delim it messed up player 28's data after her name. In the end I just gave up on trying to drop the dashed-lines on the read. Below I show it first with comment.char = "-" and then without. The dashed-lines show up in column 1.
+
+```{r}
+tmp <- read.delim("https://raw.githubusercontent.com/Godbero/CUNY-MSDA-IS607/master/tournamentinfo.txt", header=FALSE, sep="|", skip = 4, comment.char = "-", stringsAsFactors = FALSE)
+str(tmp)
+tmp
+
+tmp <- read.delim("https://raw.githubusercontent.com/Godbero/CUNY-MSDA-IS607/master/tournamentinfo.txt", header=FALSE, sep="|", skip = 4, stringsAsFactors = FALSE)
+str(tmp)
+tmp
+```
+
+
+# Data Wrangling
+
+We saw above we have a dataframe tmp that has 10 columns of real information with 3 rows of info per player or record. For example, row 1 - column 1 is the player number for player 1, and row 2 -column 1 is the state for player 1, and row 3 -column 1 is the dashed-line, and so on.
+
+Now we can continue with getting the data we need. A good first step is to create our target dataframe with fields we need. For each player we need name, state, points, rating, the average pre-rating of their ooponents. The easy ones are name, state, and points. We know what column the information is in and just need to get the correct rows. Here is how it works for name: chess$Name <- tmp\$V2[c(TRUE, FALSE, FALSE)], where we want every third row (or 1, 4, 7, etc.) of column 2. For state where we want the middle row of the triplet for column 1 we just use false, true and false.
+
+```{r}
+chess <- data.frame(Name = tmp$V2[c(TRUE, FALSE, FALSE)], State = tmp$V1[c(FALSE, TRUE, FALSE)], Points = round(as.numeric(tmp$V3[c(TRUE, FALSE, FALSE)]), 1), Rating = integer(64), Opponents = integer(64))
+chess
+```
+
+
+OK, we have 3 out of 5 fields we need for our output. Let's get the pre-rating for each player. I use the stringr library to pull this info out of it's combined value field with the USCF ID and post-rating. We pull out the value we want by realizng it's in column 2 in the middle rows, so tmp\$V2[c(FALSE, TRUE, FALSE)] will get the combined string. We then use regular expressions to show R:, followed by one or more blanks, followed by one or more digits, or "R:[:blank:]+[:digit:]+". Here is the code.
+
+```{r}
+library(stringr)
+tmpRating <- str_extract(tmp$V2[c(FALSE, TRUE, FALSE)], "R:[:blank:]+[:digit:]+")
+chess$Rating <- as.numeric(str_extract(tmpRating, "[:digit:]+"))
+chess
+```
+
+
+Now we have 4 out of the 5 fields and we saved the hard one for last. My first step was to create a rating table that started out with player number, pre-rating, and the 7 rounds of play. Using regular expressions we drop the letters in the rounds and just keep the opponents player number for each round. For player 1 this looks like 1, 1794, 39, 21, 18, 14, 7, 12, 4. I also made a column for the average opponent pre-rating.
+
+```{r}
+ratings <- data.frame(playnum = str_trim(tmp$V1[c(TRUE, FALSE, FALSE)]), rate = chess$Rating, R1 = as.numeric(str_extract(tmp$V4[c(TRUE, FALSE, FALSE)], "[:digit:]+")), R2 = as.numeric(str_extract(tmp$V5[c(TRUE, FALSE, FALSE)], "[:digit:]+")), R3 = as.numeric(str_extract(tmp$V6[c(TRUE, FALSE, FALSE)], "[:digit:]+")), R4 = as.numeric(str_extract(tmp$V7[c(TRUE, FALSE, FALSE)], "[:digit:]+")), R5 =  as.numeric(str_extract(tmp$V8[c(TRUE, FALSE, FALSE)], "[:digit:]+")), R6 =  as.numeric(str_extract(tmp$V9[c(TRUE, FALSE, FALSE)], "[:digit:]+")), R7 =  as.numeric(str_extract(tmp$V10[c(TRUE, FALSE, FALSE)], "[:digit:]+")), rateAvg = numeric(64))
+ratings
+```
+
+What I need to do next is convert or replace the player number in each round with their pre-ranking number. For example using Player 1, R1 for player1 or R1[1] = 39; ratings\$rate for player39 = 1436; so we want R1[1] = 1436. This looks like ratings\$R1[1] <- ratings\$rate[ratings\$R1[1]]. And, it's the same for R2 through R7. We need to do this for 64 players, so I loop through R1 to R7 64 times. I am sure I could make a second loop for the 1 through 7, but that would make my head hurt and be hard to read.
+
+```{r}
+for (i in 1:64) {
+        ratings$R1[i] <- ratings$rate[ratings$R1[i]]
+        ratings$R2[i] <- ratings$rate[ratings$R2[i]]
+        ratings$R3[i] <- ratings$rate[ratings$R3[i]]
+        ratings$R4[i] <- ratings$rate[ratings$R4[i]]
+        ratings$R5[i] <- ratings$rate[ratings$R5[i]]
+        ratings$R6[i] <- ratings$rate[ratings$R6[i]]
+        ratings$R7[i] <- ratings$rate[ratings$R7[i]]
+}
+ratings
+```
+
+
+Now that we have a table of opponents pre-rankings by player all we need to do is average the rankings and we have our last value. I found a rowMeans function that seems made to order for this problem. Again we need to do this 64 times, so I use a for-loop, and then I put the final values in our chess dataframe. Using na.rm = TRUE gives us average values when rounds were not played for whatever reason.
+
+```{r}
+for (i in 1:64) {
+        ratings$rateAvg[i] <- rowMeans(ratings[i, 3:9], na.rm = TRUE)
+}
+ratings
+chess$Opponents <- round(ratings$rateAvg, digits = 0)
+chess
+```
+
+
+# Data Output
+
+We need to write our chess dataframe out as a csv file to finish our work. This is the easier part of the assignment. I did manage to have some problems. I can write the file to my local computer, but was unable to figure out out how to write it to GitHub. Here is the code to save it on my PC.
+
+```{r}
+write.csv(chess, file = "C:/Users/Robert/Documents/CUNY/IS607-Data-Collection/Project1/tournamentoutput.txt")
+```
+
+
