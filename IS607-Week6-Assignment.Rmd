@@ -1,0 +1,82 @@
+---
+title: "IS607 Week 6 Assignment"
+author: "Robert Godbey"
+date: "October 4, 2015"
+output: html_document
+---
+
+### (1) Create a .CSV file (or optionally, a MySQL database!) that includes all of the information above. You're encouraged to use a "wide" structure similar to how the information appears above, so that you can practice tidying and transformations as described below.
+
+I made a CSV file using MS Note Pad and saved it on GitHub.
+
+### (2) Read the information from your .CSV file into R, and use tidyr and dplyr as needed to tidy and transform your data.
+
+Here I use the read.csv function to read in my csv file. It is VERY untidy.
+
+```{r}
+untidy <- read.csv("https://raw.githubusercontent.com/Godbero/CUNY-MSDA-IS607/master/week6.csv", header = TRUE, sep = "/", row.names = NULL, stringsAsFactors = FALSE)
+untidy
+```
+
+I begin to tidy the dataframe I read in by assigning column names, getting rid of an extra column, and getting rid of an empty row. I also filled in the airline name on the rows where it wasn't repeated.
+
+```{r}
+untidy <- subset(untidy, c(TRUE, TRUE, FALSE, TRUE, TRUE), 2:8)
+names(untidy)[names(untidy) == "X"] <- "Airline"
+names(untidy)[names(untidy) == "X.1"] <- "Arrival"
+untidy[2, 1] <- "ALASKA"
+untidy[4, 1] <- "AM WEST"
+untidy
+```
+
+
+Now that the data frame is a little less untidy or at least easier to read I am ready to tidy it up. My goal is to make a 4-column dataframe with Airline, Arrival, City, and Count.
+
+```{r}
+library(tidyr)
+tidy <- gather(untidy, "City", "Count", 3:7)
+tidy
+```
+
+
+### (3) Perform analysis to compare the arrival delays for the two airlines.
+
+Now that I want to perform analysis on the data it will be handy to have the counts in the fourth column be numeric values. I also noticed that my very tidy dataframe may not be that useful for calculations. It may be more useful to have Airline, City, On-time, Delayed. It is the same number of columns and more useful.
+
+```{r}
+tidy$Count <- as.numeric(gsub(",", "", tidy$Count))
+tidy <- spread(tidy, "Arrival", Count)
+tidy
+```
+
+
+Now that I have my new tidier dataframe I can look at some analysis. I would like to add the on-time and delayed numbers together to be total flights by that airline to that city. I can then calculate the percentage of delayed flights and look at a few other things.
+
+
+```{r}
+library(dplyr)
+tidy <- mutate(tidy, Total = delayed + `on time`, PercentDelayed = delayed / Total * 100)
+tidy <- arrange(tidy, City, PercentDelayed)
+tidy
+```
+
+
+We can see my this first round of analysis that Alaska Airlines is delayed less often than American West in every city we have in the data. The percentage difference looks to be the closest in Phoenix and the furthest in San Francisco. Let's try some summarizing to see if we can learn any more.
+
+```{r}
+delays <- tidy %>% group_by(Airline) %>% summarise(MeanPercent = round(mean(PercentDelayed), 0))
+delays
+```
+
+
+We see from this summary that Alaska is delayed on arrival 11% of the time and American West is 18% of the time.
+
+
+### (4) Your code should be in an R Markdown file, posted to rpubs.com, and should include narrative descriptions of your data cleanup work, analysis, and conclusions. Please include in your homework submission:
+
+. The URL to the .Rmd file in your GitHub repository. and
+https://github.com/Godbero/CUNY-MSDA-IS607/blob/master/IS607-Week6-Assignment.Rmd
+
+. The URL for your rpubs.com web page.
+http://www.rpubs.com/Godbero/115655
+
