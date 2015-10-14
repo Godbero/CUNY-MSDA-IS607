@@ -1,0 +1,346 @@
+---
+title: "IS607 Project 2"
+author: "Robert Godbey"
+date: "October 7, 2015"
+output: html_document
+---
+
+## Introduction: The Assignment
+
+(1) Choose any three of the "wide" datasets identified in the Week 6/7 Discussion item. (You may use your own dataset; please don't use my Sample Post dataset, since that was used in your Week 6 assignment!) For each of the three chosen datasets:
+
+* Create a .CSV file (or optionally, a MySQL database!) that includes all of the information included in the dataset. You're encouraged to use a "wide" structure similar to how the information appears in the discussion item, so that you can practice tidying and transformations as described below.
+
+* Read the information from your .CSV file into R, and use tidyr and dplyr as needed to tidy and transform your data. [Most of your grade will be based on this step!]
+
+* Perform the analysis requested in the discussion item.
+
+* Your code should be in an R Markdown file, posted to rpubs.com, and should include narrative descriptions of your data cleanup work, analysis, and conclusions.
+
+(2) Please include in your homework submission, for each of the three chosen datasets:
+
+* The URL to the .Rmd file in your GitHub repository. and
+
+* The URL for your rpubs.com web page.
+
+```{r, echo=FALSE}
+# Libraries for this assignment
+library(rvest)
+library(stringr)
+library(dplyr)
+library(lubridate)
+```
+
+
+## Dataset 1: Temperature in the Lower 48 (Contiguous U.S. States)
+
+More and more US government agencies are reporting data on global warming and NASA and NOAA are leading the fray. I thought this dataset from NOAA was a good example of compacted data, where multiple observations sharing a few fields are mashed together.
+
+Here is a screen shot of the table from the NOAA website to show where I started.
+
+![](https://raw.githubusercontent.com/Godbero/CUNY-MSDA-IS607/master/noaa.JPG)
+
+
+### Retrieving the Temperatures
+
+The data from NOAA downloaded as a CVS file (there were options for XML and json too). I was able to load it easily into a dataframe once I marked a comment line with a # to skip it. It came in as 17 rows with 12 columns, almost square, and not as compacted as it looked on the webpage.
+
+```{r}
+tempdata <- read.csv("https://raw.githubusercontent.com/Godbero/CUNY-MSDA-IS607/master/noaa.csv", header = TRUE, sep = ",", comment.char = "#", stringsAsFactors = FALSE)
+tbl_df(tempdata)
+```
+
+
+### Tidying the Temperatures
+
+Since they CSV file already broke out the highest and lowest ranks and dates, I decided to look at the same time frame over time to look for a pattern. Looking at the screen shot above we see period 60 is September 2010 to August 2015. Period 48 is September 2011 to August 2015; period 36 is September 2012 to August 2015; period 24 is September 2013 to August 2015; and period 12 is September 2014 to August 2015. These are the rows I want. As for columns I choose Value (temp in F), Mean, Departure (difference) and High.Rank.
+
+```{r}
+tidy.temp <- subset(tempdata, Period >= 12, select = c(Period, Value, Twentieth.Century.Mean, Departure, High.Rank))
+colnames(tidy.temp) <- c("Period", "Temp", "Mean", "Diff", "Rank")
+tidy.temp <- tidy.temp[-2, ]     # to get rid of row 18
+tidy.temp
+```
+
+
+### Analyzing the Temperatures
+
+I made a nice small dataset and that doesn't leave me much to say. We can look at the table in period order and see that each year does not get linearly hotter. Although that most recent year shows the largest difference from the mean, showing it was the warmest, the 2 and 3 year values are not each gradually cooler (which would happen if it got a little warmer each year on average).
+
+If we sort by Temp we see that 1 year was the hottest, followed by 4 and 5. It is good that the temperatures are in sync with the difference from the mean. It is almost a test that the data makes some sense and we see it correctly.
+
+I am not sure I understand Rank. The data for the 4 and 5 year time span rank as the 6th highest, but the 1 year data, which is the highest temperature and difference, ranks as the 8th highest. I don't have anything else to say about this dataset.
+
+```{r}
+arrange(tidy.temp, Temp)
+arrange(tidy.temp, Rank)
+
+```
+
+
+## Dataset 2: All the Presidents
+
+I got the idea, URL and analysis questions from Youqing Xiang in our class. I started down the path of reading data in from Wikipedia, because I thought that was the new focus of this project (re-thought that after a post from Andy), and because it reminded me of the Introduction chapter of our textbook on UNESCO sites.
+
+This turned out to be a long path, because of the recent change from http to https on Wikipedia (and most other sites). This made the example code in the textbook not work. I went to the textbook website and followed their suggestion to use Hadley Wickham's new rvest package.
+
+
+
+### Retrieving the Presidents
+
+We start by loading rvest and using it to read the List of Presidents from Wikipedia. The result is a List of 2 in prez_html that contains a lot of HTML code I did not print here. The first line is the header information and the second line is the body HTML code. Using the Nodes function allows me to search the HTML code for table. The result is a List of 10 times table is used on the page.
+
+It does not take long to see that lines 1 and 2 are wikitables and our candidates for analysis. I print out table 2 here, since it is smaller and easier to recognize useful information. We have a line for the table header and each living former president. We use the Table function to get the data ready for tidying and analysis. We will see more of the bigger table below. It proves to be more of a problem due to an inconsistent number of columns.
+
+```{r}
+prez.html <- read_html("https://en.wikipedia.org/wiki/List_of_Presidents_of_the_United_States", encoding = "UTF-8")
+prez.tables <- html_nodes(prez.html, "table")
+prez.tables
+prez.tables[[2]]
+prez.former.live <- html_table(prez.tables[[2]], header = TRUE)
+prez.former.live
+```
+
+
+### Tidying the Presidents
+
+We look at the smaller table of Living Former Presidents first before diving into all of the US presidents.
+
+#### Living Former Presidents
+
+For the smaller table (prez.former.live) we have a dataframe of 4 observations and 3 variables. This is a case of of data not being wide enough. It would be a lot simpler if age was not embedded with date of birth, if date of birth was in one format, and Term of Office was broken out into start and end dates (years).
+
+```{r}
+term.start <- str_extract(prez.former.live$'Term of office', "[1-2]\\d{3}")
+term.end.tmp <- str_extract(prez.former.live$'Term of office', "[:punct:][1-2]\\d{3}")
+term.end <- str_extract(term.end.tmp, "[1-2]\\d{3}")
+prez.dob <- str_extract(prez.former.live$'Date of birth', "\\d{4}-\\d{2}-\\d{2}")
+prez.former.live$Start <- as.numeric(term.start)
+prez.former.live$End <- as.numeric(term.end)
+prez.former.live$`Date of birth` <- as.Date(prez.dob)
+prez.former.live <- subset(prez.former.live, select = -2)
+colnames(prez.former.live)[2] <- "DOB"
+prez.former.live
+```
+
+
+#### All the Presidents
+
+It turns out we need more than just the Table function to get all the presidents. We need to find a more focused CSS label to look for to attempt to pull out columns of data. In the documentation of rvest I found a utility called **SelectorGadget** mentioned that helps with this. I used it to find the best selector for the presidents' names was "b a", and for birth to death dates "b~ small" and so on. I list out the results of prez.dob here to show the finding of the raw HTML data and conversion into text. After this step I have Names, birth and death dates, states, terms and parties (just for fun).
+
+```{r}
+prez.names <- html_nodes(prez.html, "b a")
+prez.names <- html_text(prez.names)
+prez.dob <- html_nodes(prez.html, "b~ small")
+prez.dob
+prez.dob <- html_text(prez.dob)
+prez.dob
+prez.states <- html_nodes(prez.html, "td:nth-child(4) a")
+prez.states <- html_text(prez.states)
+prez.terms <- html_nodes(prez.html, "td > .date")
+prez.terms <- html_text(prez.terms)
+prez.party <- html_nodes(prez.html, "td:nth-child(6) a")
+prez.party <- html_text(prez.party)
+```
+
+We have strings for each of our desired columns of data and a quick check shows they are different lengths. There are 44 presidents in the Wikipedia table, so a multiple of 44 would be good.
+
+* prez.party    length = 48,    4 more than we want
+* prez.terms    length = 85,    2 dates per president would be 88
+* prez.states   length = 45,    1 more than we need, let's hope for an extra record at end
+* prez.dob      length = 44,    our only winner
+* prez.names    length = 188,   not an even multiple of 44
+
+We need to trim most of these string to make a nice table. Below I start with prez.dob since it is the correct (length) number of values and separate date born from date died.
+
+```{r}
+Born <- str_extract(prez.dob, "[1-2]\\d{3}")
+died.tmp <- str_extract(prez.dob, "[1-2]\\d{3}[:punct:]$")
+Died <- str_extract(died.tmp, "[1-2]\\d{3}")  # I get the birthdate again for living presidents
+Died[Born == Died] <- NA  # that fixes the undead
+State <- prez.states[prez.states != "Andrew Johnson"]  # Andrew Johnson was my 45th state
+Party <- prez.party[prez.party != c("[14]", "[n 12]", "[n 13]")]  # did not remove [14]???
+Party <- Party[Party != "[14]"]  # still 1 too many
+Party <- Party[Party != "National Union"]  # a party we don't need
+Party <- sub("\n", "", Party)  # get rid of newlines just in case
+breakstr <- prez.terms[63:85]  # no dates for FDR, break at Truman
+prez.terms[63] <- "March 4, 1933"  # FDR starts
+prez.terms[64] <- "April 12, 1945"  # FDR dies after starting 4th term
+prez.terms[65:87] <- breakstr
+prez.terms[88] <- "January 20, 2017"  # To cover current office holder, Obama
+Start <- prez.terms[c(TRUE, FALSE)]
+End <- prez.terms[c(FALSE, TRUE)]
+President <- prez.names[1:44]  # I'm sure there is a more elegant way
+prez.all <- data.frame(President, Born, Died, Start, End, State, Party, stringsAsFactors = FALSE)
+prez.all
+```
+
+
+### Analyzing the Presidents
+
+Youqing Xiang suggested in her post the following ideas for analysis:
+
+* Give the list of presidents who had one term (4 years in the office) 
+* and presidents who had two terms (8 years in the office)
+* Which president is the oldest
+* What is the average age of all the presidents
+
+#### Living Former Presidents
+
+With the short list of 4 presidents this is not very complicated or surprising. We use the Mutate function from dplyr to calculate a time (years) in office and the current age of the living presidents (to 1 decimal point to break the ties). Surprisingly (maybe not) they served in order of age with George H. W. Bush being older by about 3 months. I tried using the Summarize function in dplyr, but with so few records it was no different than taking the mean. This will be a little different with all the presidents.
+
+```{r}
+prez.former.live <- mutate(prez.former.live, InOffice = End - Start, Age = as.numeric(round((Sys.Date() - DOB)/365, 1)))
+prez.former.live
+mean(prez.former.live$Age)
+```
+
+
+#### All the Presidents
+
+With the list of all US presidents we can now review Youqing Xiang list of questions and 
+produce some more interesting results.
+
+- Give the list of presidents who had one term (4 years in the office)
+- and presidents who had two terms (8 years in the office)
+
+This is a good example to figure out what we mean by a question. Here is the list of presidents that served less than 4 years. Most were elected for a term, but did not serve the full 4 years. Gerald Ford was not even elected, but succeeded Nixon when he resigned and was not reelected. We have 10 presidents that served less than 4 years.
+
+```{r}
+prez.all$Start <- as.Date(prez.all$Start, format = "%B %d, %Y")
+prez.all$End <- as.Date(prez.all$End, format = "%B %d, %Y")
+prez.all <- mutate(prez.all, Days = as.numeric(End - Start), Years = round(Days / 365, 1))
+arrange(subset(prez.all, Years < 4, select = c(-State, -Party)), Years)
+```
+
+Here is the list of presidents that served 4 years We get 14 presidents that served their 4 years. We have (10 + 14) 24 presidents either elected to 1 term or finishing a term or just over half (54%) of all presidents.
+
+```{r}
+arrange(subset(prez.all, Years == 4, select = c(-State, -Party)), Years)
+```
+
+- and presidents who had two terms (8 years in the office)
+
+We get a similar situation when we look at two-term presidents (or more terms in 1 case). How do we count them? Abraham Lincoln was assassinated months after being elected to a second term, as was William McKinley. Lyndon Johnson, Calvin Coolidge, Theodore Roosevelt and Harry Truman finished terms for presidents that died in office, then got (re-) elected. Nixon had to resign office after being reelected. Here is the list of presidents that served more than 4 years, but less than 8. George Washington shows up because technically he served just under 8 years, but they were still working out the details. We get 8 that were elected to a second term (even if they were not elected to the first), but did not serve 8 years in office.
+
+```{r}
+arrange(subset(prez.all, (Years > 4 & Years < 8), select = c(-State, -Party)), Years)
+```
+
+
+How many presidents served 8 years or more? This gives us 12 presidents that served 8 years or more, 11 of these were regular 2-terms, the 12th was Franklin D. Roosevelt, who was elected to his 4th term when he died in office a few months after winning. After FDR we put in the 2-term limit.
+
+```{r}
+arrange(subset(prez.all, Years >= 8, select = c(-State, -Party)), Years)
+```
+
+
+We had 24 presidents that in some way can be called 1-term presidents and we had 20 that were 2-term or more. Here is the full list sorted by days in office that shows the range of 31 to 4,422 days in office. The average number of days in office is 1,890 or just over 5 years.
+
+```{r}
+# arrange(prez.all, Days, End)
+arrange(subset(prez.all, Days > 0, select = c(-State, -Party)), Days, End)
+mean(prez.all$Days)
+mean(prez.all$Days) / 365.25
+```
+
+- Which president is the oldest
+- What is the average age of all the presidents
+
+The oldest living president from our table above is George H. W. Bush who is about 3 months older than Jimmy Carter. If we want to see which presidents lived to be the oldest I show ages in years below (Gerald Ford and Ronald Reagan both died at 93). I also show their age at the end of their term to show how old they were in office (the oldest in office was Reagan at 78) and the average age was 71.
+
+```{r}
+prez.all$Died[is.na(prez.all$Died)] <- "2015"  # to get an age for living presidents
+prez.all <- mutate(prez.all, Age = as.numeric(Died) - as.numeric(Born))
+# arrange(prez.all, desc(Age), End)
+arrange(subset(prez.all, Days > 0, select = c(-State, -Party)), desc(Age), End)
+prez.all <- mutate(prez.all, InOffice = as.numeric(year(ymd(End))) - as.numeric(Born))
+# arrange(prez.all, desc(InOffice))
+arrange(subset(prez.all, Days > 0, select = c(-State, -Party, -Days, -Years)), desc(InOffice))
+round(mean(prez.all$Age),0)
+```
+
+
+To wrap up I used the Count function from dplyr to summarize the data. We answer the old questions of which state (NY) and which party (Republican) had the most presidents.
+
+```{r}
+count(prez.all, State, sort = TRUE)
+count(prez.all, Party, sort = TRUE)
+```
+
+
+## Dataset 3: Reviews on Amazon
+
+I got the idea to examine Amazon reviews and the Banana slicer specifically from classmate Joy Peyton. I believe web scraping text and reviews in particular may be something I need to do. I started with reading data in from Amazon, getting the data into a dataframe, and thought I would focus on sentiment analysis.
+
+
+### Retrieving Amazon Reviews
+
+This is very similar to the work on the presidents. I looked at the table information to see if I could read things in almost directly, like with the living presidents' data. That did not seem possible, however the data selectors were clearly mark and I was able to get a tag for each field or column I wanted. I chose:
+
+* title - for the review heading
+* author - for the ID or name of the review writer
+* date - for the date the review was posted
+* rate - for the 5 star rating system
+* review - for the free-form text review
+
+
+```{r}
+amazon.html <- read_html("http://www.amazon.com/Hutzler-571-Banana-Slicer/product-reviews/B0047E0EII/ref=cm_cr_dp_see_all_btm?ie=UTF8&showViewpoints=1&sortBy=bySubmissionDateDescending", encoding = "UTF-8")
+title <- html_nodes(amazon.html, ".a-color-base.a-text-bold")
+title <- html_text(title)
+author <- html_nodes(amazon.html, ".author")
+author <- html_text(author)
+date <- html_nodes(amazon.html, "#cm_cr-review_list .review-date")
+date <- html_text(date)
+date <- as.Date(mdy(gsub("on ", "", date)))
+rate <- html_nodes(amazon.html, "#cm_cr-review_list .review-rating")
+rate <- html_text(rate)
+rate <- as.numeric(gsub(" out of 5 stars", "", rate))
+review <- html_nodes(amazon.html, ".review-data+ .review-data")
+review <- html_text(review)
+reviews <- data.frame(author, title, rate, date, review, stringsAsFactors = FALSE)
+reviews
+```
+
+
+### Tidying the Reviews
+
+We can see from above that we were able to read most data straight from the web page with the rvest function html_text. Before I describe the minimal tidying needed to get this web-page-wide information into a fairly narrow dataframe, I want to discuss a problem that I feel is more about Retrieving.
+
+There are over 5,000 reviews of the Hutzler 571 Banana Slicer, but I only seem to be able to access them 10 at a time. I spent some time trying to figure this out and ran out of time. Maybe a web developer can give me some ideas. This 10 at a time problem would greatly hinder the usefulness of using R to analyze web-based reviews.
+
+Back to tidying the data. When reading in the dates I captured "on March 3, 2011" and so on for each date. I used gsub to remove the "on" and space. I used mdy from the lubridate package in combination with as.Date to get the dates ready for a dataframe.
+date <- as.Date(mdy(gsub("on ", "", date)))
+
+In a similar way I used gsub again to pull " out of 5 stars" out of my rating and as.numeric to convert the remaining character number into something we can add.
+rate <- as.numeric(gsub(" out of 5 stars", "", rate))
+
+I spent more time trying to make the review text field display better in the dataframe print to no avail. When I display a single column it looks fine, like one character string, but not so when I display the entire dataframe. And, tbl_df from dplyr did not help.
+
+```{r}
+tbl_df(reviews)
+```
+
+
+### Analyzing the Reviews
+
+What really got me interested in this example was Joy's idea on sentiment analysis and the concept of a satire detector. I have done a simple sentiment analysis in Python before and I hoped to leverage that work.
+
+My sketched out ideas amount to this.
+
+* Find and load a sentiment dictionary in R
+* Write an R function that compares a review with the dictionary
+* Add (both positive & negative) up point values for dictionary words found in review
+* Assign a sentiment value to the review
+* See if a correlation between a very high sentiment score with a high rating = satire
+* See if a correlation between a very high sentiment score with a low rating = irony or sarcasm
+
+I ran out of time before I got the dictionary working well enough to test a function. My limited data set would have made it difficult to test for satire.
+
+I can give you the average rating from my 10 reviews ...
+
+
+```{r}
+round(mean(reviews$rate),1)
+```
