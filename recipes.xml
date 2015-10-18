@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<booklist>
+	<book id="1">
+		<Title>The Tassajara Bread Book</Title>
+		<Authors>
+			<Author>Edward Espe Brown</Author>
+		</Authors>
+		<Published>1970</Published>
+		<Publisher>Shambhala Publications</Publisher>
+		<ISBN>0-87773-025-3</ISBN>
+		<Binding>Paperback</Binding>
+		<Note>Favorite bread book. Best way to learn to make bread, especially whole grain.</Note>  
+	</book>
+	<book id="2">
+		<Title>The Best Recipe</Title>
+		<Authors>
+			<Author>The Editors of Cooks Illustrated</Author>
+		</Authors>
+		<Published>1999</Published>
+		<Publisher>Boston Common Press</Publisher>
+		<ISBN>0-936184-34-8</ISBN>
+		<Binding>Hardback</Binding>
+		<Note>Favorite general cookbook. The authority on best approach or methods.</Note>  
+	</book>
+	<book id="3">
+		<Title>Beer-Can Chicken</Title>
+		<Authors>
+			<Author>Steven Raichlen</Author>
+		</Authors>
+		<Published>2002</Published>
+		<Publisher>Workman Publishing Company</Publisher>
+		<ISBN>0-7611-2016-5</ISBN>
+		<Binding>Paperback</Binding>
+		<Note>Favorite general cookbook. The authority on best approach or methods.</Note>  
+	</book>
+	<book id="4">
+		<Title>America Farm to Table</Title>
+		<Authors>
+			<Author>Mario Batali</Author>
+			<Author2>Jim Webster</Author2>
+		</Authors>
+		<Published>2014</Published>
+		<Publisher>Hachette Book Group</Publisher>
+		<ISBN>978-1-4555-8468-0</ISBN>
+		<Binding>Hardback</Binding>
+		<Note>Just getting to know this one, but great so far. Made pork roast on grill and it was great.</Note>  
+	</book>
+</booklist>

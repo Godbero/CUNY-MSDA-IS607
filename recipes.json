@@ -1,0 +1,40 @@
+{"booklist" : [
+	{
+	"Title" : "The Tassajara Bread Book",
+	"Authors" : ["Edward Espe Brown"],
+	"Published" : 1970,
+	"Publisher" : "Shambhala Publications",
+	"ISBN" : "0-87773-025-3",
+	"Binding" : "Paperback",
+	"Note" : "Favorite bread book. Best way to learn to make bread, especially whole grain."
+	},
+	{
+	"Title" : "The Best Recipe",
+	"Authors" : ["The Editors of Cooks Illustrated"],
+	"Published" : 1999,
+	"Publisher" : "Boston Common Press",
+	"ISBN" : "0-936184-34-8",
+	"Binding" : "Hardback",
+	"Note" : "Favorite general cookbook. The authority on best approach or methods."
+	},
+	{
+	"Title" : "Beer-Can Chicken",
+	"Authors" : ["Steven Raichlen"],
+	"Published" : 2002,
+	"Publisher" : "Workman Publishing Company",
+	"ISBN" : "0-7611-2016-5",
+	"Binding" : "Paperback",
+	"Note" : "Favorite general cookbook. The authority on best approach or methods."
+	},
+	{
+	"Title" : "America Farm to Table",
+	"Authors" : ["Mario Batali", "Jim Webster"],
+	"Published" : 2014,
+	"Publisher" : "Hachette Book Group",
+	"ISBN" : "978-1-4555-8468-0",
+	"Binding" : "Hardback",
+	"Note" : "Just getting to know this one, but great so far. Made pork roast on grill and it was great."
+	}]
+}
+	
+
