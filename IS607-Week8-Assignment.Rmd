@@ -1,0 +1,287 @@
+---
+title: "IS607 Week 8 Assignment"
+author: "Robert Godbey"
+date: "October 18, 2015"
+output: 
+  html_document: 
+    toc: yes
+---
+
+## Introduction
+
+Pick three of your favorite books on one of your favorite subjects. At least one of the books should have more than one author. For each book, include the title, authors, and two or three other attributes that you find interesting.
+
+Take the information that you've selected about these three books, and separately create three files which store the book's information in HTML (using an html table), XML, and JSON formats (e.g. "books.html", "books.xml", and "books.json"). To help you better understand the different file structures, I'd prefer that you create each of these files "by hand" unless you're already very comfortable with the file formats.
+
+Write R code, using your packages of choice, to load the information from each of the three sources into separate R data frames. Are the three data frames identical?
+Your deliverable is the three source files and the R code. If you can, package your assignment solution up into an .Rmd file and publish to rpubs.com. [This will also require finding a way to make your three text files accessible from the web].
+
+
+## HTML
+
+To make my HTML table of books I needed to use these tags:
+
+        Tables are defined with the <table> tag
+        Tables are divided into table rows with the <tr> tag
+        Table rows are divided into table data with the <td> tag
+        Table row can also be divided into table headings with the <th> tag
+
+My code looked like this ...
+
+        <table border="1" style="width:100%">
+                <tr>
+                        <th>Title</th>
+                        <th>Author</th> 
+                        <th>Published</th> 
+                        <th>Publisher</th> 
+                        <th>ISBN</th> 
+                        <th>Binding</th>
+                        <th>Note</th>
+                </tr>
+                <tr>
+                        <td>The Tassajara Bread Book</td>
+                        <td>Edward Espe Brown</td> 
+                        <td>1970</td>
+                        <td>Shambhala Publications</td>
+                        <td>0-87773-025-3</td>
+                        <td>Paperback</td>
+                        <td>Favorite bread book. Best way to learn to make bread.</td>
+                </tr>
+        </table>
+
+Rendering the HTML gives us this table. I ended up with 4 books, because my first multi-author book had so many authors, they didn't list them. I added another book with just two authors with both listed.
+
+<table border="1" style="width:100%">
+  <tr>
+   <th>Title</th>
+   <th>Author</th> 
+   <th>Published</th> 
+   <th>Publisher</th> 
+   <th>ISBN</th> 
+   <th>Binding</th>
+   <th>Note</th>
+  </tr>
+  <tr>
+   <td>The Tassajara Bread Book</td>
+   <td>Edward Espe Brown</td> 
+   <td>1970</td>
+   <td>Shambhala Publications</td>
+   <td>0-87773-025-3</td>
+   <td>Paperback</td>
+   <td>Favorite bread book. Best way to learn to make bread, especially whole grain.</td>
+  </tr>
+  <tr>
+   <td>The Best Recipe</td>
+   <td>The Editors of Cooks Illustrated</td> 
+   <td>1999</td>
+   <td>Boston Common Press</td>
+   <td>0-936184-34-8</td>
+   <td>Hardback</td>
+   <td>Favorite general cookbook. The authority on best approach or methods.</td>
+  </tr>
+  <tr>
+   <td>Beer-Can Chicken</td>
+   <td>Steven Raichlen</td> 
+   <td>2002</td>
+   <td>Workman Publishing Company</td>
+   <td>0-7611-2016-5</td>
+   <td>Paperback</td>
+   <td>My favorite way to make chicken; on the grill, in the oven, lots of variations.</td>
+  </tr>
+  <tr>
+   <td>America Farm to Table</td>
+   <td>Mario Batali and Jim Webster</td> 
+   <td>2014</td>
+   <td>Hachette Book Group</td>
+   <td>978-1-4555-8468-0</td>
+   <td>Hardback</td>
+   <td>Just getting to know this one, but great so far. Made pork roast on grill and it was great.
+   </td>
+  </tr>
+</table>
+
+
+Now we want to read this HTML file using R, put it into a dataframe, and look at the dataframe to see what we have.
+
+```{r}
+library(rvest)
+library(dplyr)
+recipes_html <- read_html("https://raw.githubusercontent.com/Godbero/CUNY-MSDA-IS607/master/recipes.html", encoding = "UTF-8")
+recipes_tables <- html_nodes(recipes_html, "table")
+recipes.html <- html_table(recipes_tables[[1]], header = TRUE)
+recipes.html
+str(recipes.html)
+tbl_df(recipes.html)
+```
+
+
+## XML
+
+To make my XML file of books I needed to use these tags:
+
+        <booklist>
+        <Title>
+        <Authors>, <Author>, and <Author2> to handle two authors
+        <Published>
+        <Publisher>
+        <Binding>
+        <Note>
+
+My code looked like this ...
+
+    <?xml version="1.0" encoding="UTF-8"?>
+      <booklist>
+	<book id="1">
+		<Title>The Tassajara Bread Book</Title>
+		<Authors>
+			<Author>Edward Espe Brown</Author>
+		</Authors>
+		<Published>1970</Published>
+		<Publisher>Shambhala Publications</Publisher>
+		<ISBN>0-87773-025-3</ISBN>
+		<Binding>Paperback</Binding>
+		<Note>Favorite bread book. Best way to learn to make bread, especially whole                 grain.</Note>  
+        </book>
+	<book id="2">
+		<Title>The Best Recipe</Title>
+		<Authors>
+			<Author>The Editors of Cooks Illustrated</Author>
+		</Authors>
+		<Published>1999</Published>
+		<Publisher>Boston Common Press</Publisher>
+		<ISBN>0-936184-34-8</ISBN>
+		<Binding>Hardback</Binding>
+		<Note>Favorite general cookbook. The authority on best approach or                          methods.</Note>  
+	</book>
+      </booklist>
+
+Rendering the XML gives us these records. I ended up with 4 books, because my first multi-author book had so many authors, they didn't list them. I added another book with just two authors with both listed. Here XML the two authors of the last book show up together with no space between there names.
+
+<?xml version="1.0" encoding="UTF-8"?>
+<booklist>
+  <book id="1">
+    <Title>The Tassajara Bread Book</Title>
+    <Authors>
+      <Author>Edward Espe Brown</Author>
+    </Authors>
+    <Published>1970</Published>
+    <Publisher>Shambhala Publications</Publisher>
+    <ISBN>0-87773-025-3</ISBN>
+    <Binding>Paperback</Binding>
+    <Note>Favorite bread book. Best way to learn to make bread, especially whole grain.</Note>  
+  </book>
+  <book id="2">
+    <Title>The Best Recipe</Title>
+    <Authors>
+      <Author>The Editors of Cooks Illustrated</Author>
+    </Authors>
+    <Published>1999</Published>
+    <Publisher>Boston Common Press</Publisher>
+    <ISBN>0-936184-34-8</ISBN>
+    <Binding>Hardback</Binding>
+    <Note>Favorite general cookbook. The authority on best approach or methods.</Note>  
+  </book>
+  <book id="3">
+    <Title>Beer-Can Chicken</Title>
+    <Authors>
+      <Author>Steven Raichlen</Author>
+    </Authors>
+    <Published>2002</Published>
+    <Publisher>Workman Publishing Company</Publisher>
+    <ISBN>0-7611-2016-5</ISBN>
+    <Binding>Paperback</Binding>
+    <Note>Favorite general cookbook. The authority on best approach or methods.</Note>  
+  </book>
+  <book id="4">
+    <Title>America Farm to Table</Title>
+    <Authors>
+      <Author>Mario Batali</Author>
+      <Author2>Jim Webster</Author2>
+    </Authors>
+    <Published>2014</Published>
+    <Publisher>Hachette Book Group</Publisher>
+    <ISBN>978-1-4555-8468-0</ISBN>
+    <Binding>Hardback</Binding>
+    <Note>Just getting to know this one, but great so far. Made pork roast on grill and it was great.</Note>  
+  </book>
+</booklist>
+
+Now we want to read this XML file using R, put it into a dataframe, and look at the dataframe to see what we have.
+
+```{r}
+library(XML)
+library(RCurl)
+books.url = getURL("https://raw.githubusercontent.com/Godbero/CUNY-MSDA-IS607/master/recipes.xml")
+books.parse <- xmlParse(books.url)
+books.root <- xmlRoot(books.parse)
+recipes.xml <- xmlToDataFrame(books.root, stringsAsFactors = FALSE)
+recipes.xml
+str(recipes.xml)
+tbl_df(recipes.xml)
+```
+
+
+## JSON
+
+To make my JSON file of books I needed to use these tags:
+
+        "Title"
+        "Authors"
+        "Published"
+        "Publisher"
+        "Binding"
+        "Note"
+
+My code looked like this ...
+
+        {"booklist" : [
+	        {
+	        "Title" : "The Tassajara Bread Book",
+	        "Authors" : ["Edward Espe Brown"],
+	        "Published" : 1970,
+	        "Publisher" : "Shambhala Publications",
+	        "ISBN" : "0-87773-025-3",
+	        "Binding" : "Paperback",
+	        "Note" : "Favorite bread book. Best way to learn to make bread, especially whole grain."
+	        },
+
+Rendering the JSON gives us this. I ended up with 4 books, because my first multi-author book had so many authors, they didn't list them. I added another book with just two authors with both listed.
+
+{"booklist" : [
+	{
+	"Title" : "The Tassajara Bread Book",
+	"Authors" : ["Edward Espe Brown"],
+	"Published" : 1970,
+	"Publisher" : "Shambhala Publications",
+	"ISBN" : "0-87773-025-3",
+	"Binding" : "Paperback",
+	"Note" : "Favorite bread book. Best way to learn to make bread, especially whole grain."
+	},
+
+```{r}
+library(RJSONIO)
+library(plyr)
+isValidJSON("https://raw.githubusercontent.com/Godbero/CUNY-MSDA-IS607/master/recipes.json")
+books.json <- fromJSON("https://raw.githubusercontent.com/Godbero/CUNY-MSDA-IS607/master/recipes.json")
+books.unlist <- sapply(books.json[[1]], unlist)
+recipes.json <- do.call("rbind.fill", lapply(lapply(books.unlist, t), data.frame, stringsAsFactors = FALSE))
+recipes.json
+str(recipes.json)
+tbl_df(recipes.json)
+```
+
+
+## Summary
+
+The main difference here between HTML. XML and JSON, besides the formatting differences, is the way they handled the multiple authors.
+
+In HTML I just listed the two authors together in the same field. The cheap solution that was not elegant, but worked fine for just two authors and only one occurrence.
+
+In the XML I could format for the two authors, but in the dataframe they dumped them together in the same field, without any space or punctuation between them.
+
+JSON had a simple formatting for the two authors, but I was surprised to find that Authors contained all the single author books and the one with two authors got NA in authors, but values in Authors1 and Authors2.
+
+I am not sure which one I like more.
+
+
+
