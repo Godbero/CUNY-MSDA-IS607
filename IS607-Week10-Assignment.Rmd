@@ -1,0 +1,159 @@
+---
+title: "IS607 Week 10 Assignment"
+author: "Robert Godbey"
+date: "October 30, 2015"
+output: 
+  html_document: 
+    toc: yes
+---
+
+## Introduction to Web API's
+
+The New York Times web site provides a rich set of APIs, as described here: http://developer.nytimes.com/docs
+
+You'll need to start by signing up for an API key. Your task is to choose one of the New York Times APIs, construct an interface in R to read in the JSON data, and transform it to an R dataframe.
+
+I decided to work with The Article Search API and to construct a function like the example in our text, chapter 9, using Yahoo weather data.
+
+
+## Set Up for NYT Web API's
+
+With the Article Search API (v2), you can search New York Times articles from Sept. 18, 1851 to today, retrieving headlines, abstracts, lead paragraphs, links to associated multimedia and other article metadata.
+
+### The Article Search API at a Glance
+
+Base URI:               http://api.nytimes.com/svc/search/v2/articlesearch
+
+HTTP method:            GET
+
+Response formats:       JSON (.json), JSONP (.jsonp)
+
+There are 12 possible parameters for search, not counting the API key, and at least one of the parameters has 17 possible values. I decide to make my R wrapper function very simple for my version 1 and use 2 parameters, topic (search phrase) and response (most recent hits = new, oldest hits = old, blank = highest relevance).
+
+### Set Up Search
+
+Here I load the needed R Libraries and start building the parts of my search URL. I decide to put my API Key here in the code, so the code will run from GitHub and RPubs. I learned how to use the R Options method for saving ID's outside of my code from the Yahoo example.
+
+
+```{r}
+library(jsonlite)
+library(dplyr)
+
+topic = "application programming interfaces"
+# Put topic in API format
+topic <- gsub(" ", "+", topic)
+
+# Get most recent articles
+searchurl <- "http://api.nytimes.com/svc/search/v2/articlesearch.json?q=%s&sort=newest&api-key=91d71cc6a4bdd339cb45f37747025836:18:62602330"
+searchurl <- sprintf(searchurl, topic)
+
+# Test search API
+test <- fromJSON(searchurl)
+test
+str(test)
+```
+
+
+## Set Up the Data to Return
+
+We see from our test that we get a list of 3. List 2, test[2] is a simple status ("OK"), which may be useful in some advanced error checking, but I am ignoring for now. List 3, or test[3], is a copyright statement from the New York Times, which I will ignore too. The search responses we want are in the first list (test[1]).
+
+With a little more investigation we see that the part of the list we want is test[[1]]$docs. We can examine the 20 variables and decide which ones we want. Here are the variables.
+
+* web_url
+* snippet
+* lead_paragraph
+* abstract
+* print_page
+* blog
+* source
+* multimedia
+* headline
+* keywords
+* pub_date
+* document_type
+* news_desk
+* section_name
+* subsection_name
+* byline
+* type_of_material
+* X_id
+* word_count
+* slideshow_credits
+
+I decide that headline, pub_date, web_url, and maybe snippet would make a good response to a search. After putting those 4 variables into a dataframe I find headline is really 3 values (main, kicker, and print_headline). After examining my example I decide main is the one I want.
+
+```{r}
+test.df <- data.frame(test[[1]]$docs)
+variable.names(test.df)
+# Structure a dataframe to return
+response <- data.frame(test.df$headline, test.df$pub_date, test.df$web_url, test.df$snippet)
+str(response)
+
+```
+
+## Build the Function
+
+In the code below I take the ideas from above to write a function to do a simple search using New York Times Search API. The function will have two parameters, the search topic and what responses to return. After the function I run it using a few examples.
+
+### Function Junction
+
+I call this function getNYTsearch and it's parameters are topic and response. I use a simple error handling and return some simple instructions, if no parameters are entered.
+
+```{r}
+getNYTsearch <- function(topic = "", response = "") {
+## Give some instruction, if no parameters are entered
+        if (topic == "") {
+                stop('The getNYTsearch function requires a search topic to work. Please enter getNYTsearch(topic = "titanic", response = "new"). response can be o, old, n, or new. If no value for response is entered, the 10 most relevant hits are returned.')
+        }
+        
+## Put the topic in search API format
+        topic <- gsub(" ", "+", topic)
+
+## Check response and set appropriate searchurl if valid
+        if (!response %in% c("o", "n", "old", "new", "", "O", "N", "Old", "New")) {
+                stop("Wrong response parameter. Choose either '0' for oldest or 'n' for newest or leave blank '' for most relevant.")
+        }
+        if (response == "o" || response == "O" || response == "old" || response == "Old") {
+                searchurl <- "http://api.nytimes.com/svc/search/v2/articlesearch.json?q=%s&sort=oldest&api-key=91d71cc6a4bdd339cb45f37747025836:18:62602330"
+        }
+        if (response == "n" || response == "N" || response == "new" || response == "New") {
+                searchurl <- "http://api.nytimes.com/svc/search/v2/articlesearch.json?q=%s&sort=newest&api-key=91d71cc6a4bdd339cb45f37747025836:18:62602330"
+        }
+        if (response == "") {
+                searchurl <- "http://api.nytimes.com/svc/search/v2/articlesearch.json?q=%s&api-key=91d71cc6a4bdd339cb45f37747025836:18:62602330"
+        }
+
+## Get search results
+        searchurl <- sprintf(searchurl, topic)
+        fullreply <- fromJSON(searchurl)
+
+## Construct Dataframe to Return
+        reply <- data.frame(fullreply$response$docs$headline$main, fullreply$response$docs$pub_date, fullreply$response$docs$web_url, fullreply$response$docs$snippet, stringsAsFactors = FALSE)
+        colnames(reply) <- c("Headline", "Date", "URL", "Snippet")
+        reply$Date <- substr(reply$Date, 1, 10)
+
+        return(reply)
+}
+```
+
+
+### Using the Function
+
+We run through this list of tests.
+
+1. No parameters = instructions         # Could NOT knit to show in Markdown, but worked
+2. Bad response parameter               # Could NOT knit, but worked as expected at prompt
+3. Topic with no response
+4. Topic with "old" response
+5. topic with "new" response
+
+I use tbl_df from dplyr for ease of reading. They all seem to work.
+
+```{r}
+# getNYTsearch()
+# getNYTsearch("big data", "K")
+tbl_df(getNYTsearch("big data"))
+tbl_df(getNYTsearch("big data", "o"))
+tbl_df(getNYTsearch("big data", "n"))
+```
