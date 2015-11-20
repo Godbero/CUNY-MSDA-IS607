@@ -1,0 +1,345 @@
+---
+title: "IS607 Week11 Assignment"
+author: "Robert Godbey"
+date: "November 17, 2015"
+output: 
+  html_document: 
+    toc: yes
+---
+
+# Introduction to Document Classification
+
+It can be useful to be able to classify new "test" documents using already classified "training" documents.  A common example is using a corpus of labeled spam and ham (non-spam) e-mails to predict whether or not a new document is spam.  Here is one example of such data: http://archive.ics.uci.edu/ml/datasets/Spambase
+
+For this project, you can either use the above dataset to predict the class of new documents (either withheld from the training dataset or from another source such as your own spam folder).
+
+For more adventurous students, you are welcome (encouraged!) to come up with a different set of documents (including scraped web pages!?) that have already been classified (e.g. tagged), then analyze these documents to predict how new documents should be classified.
+
+# The Data
+
+I decided to use the the spam data from the UCI archive mentioned in the assignment, since I did not have another set of documents needing classifying. My first thought was to use this as the training data and use an old Yahoo Mail account I have for spammy mail to classify. I spent a little time playing with the new Yahoo API's, but was only getting 10 emails at a time when I stopped. I decided to move on and use this data of over 4,000 emails for both.
+
+```{r}
+# Libraries need for this assigment
+library(dplyr)          # to use df_tbl on dataframe
+library(tm)             # for the as.DocumentTermMatrix function
+library(RTextTools)     # for all the classifying models
+```
+
+
+## Loading the Data
+
+I downloaded the data from UCI and transferred it to GitHub, so my code would work from anywhere with a web connection. The code below shows how I read the data into R. It came in without a hitch.
+
+The result was a dataframe with 4,601 observations and 58 variables. The first look was a little uninformative as every element was a number with many of them being zero.
+
+```{r}
+spambase.data <- read.csv("https://raw.githubusercontent.com/Godbero/CUNY-MSDA-IS607/4d5124e017cf5c051d4131c35d88cc637504b241/spambase.data.txt", header=FALSE, stringsAsFactors=FALSE)
+tbl_df(spambase.data)
+```
+
+
+## Understanding the Data
+
+The spam database came with some documentation that explained the seemingly strange absence of text in these emails. Each row represents an email (to George Forman at HP) and most of the columns represent the occurrence frequency percentage of a word (or punctuation mark). This percentage is calculated by 100 * (number of times the WORD appears in the e-mail) / 
+total number of words in e-mail. For example, row 6, column 8 above has 1.85, which means the word "internet" makes up 1.85% of the words in that email.
+
+The last column (58), contains a "1" if the message was spam and a "0" if the message was NOT spam (called ham). Columns 55, 56, and 57 contain information about strings of capital letters. The list of counted words, punctuation marks, and capital letters follows.
+
+  1     |  2      |  3       |  4     |  5         |  6          |   7          |   8        |  9    |  10  
+------- | ------- | -------- | ------ | ---------- | ----------- | ------------ | ---------- | ----- | ---- 
+make    | address | all      | 3d     | our        | over        | remove       | internet   | order | mail
+**11**  |**12**   |**13**    |**14**  |**15**      |**16**       |**17**        |**18**      |**19** |**20**
+receive | will    | people   | report | addresses  | free        | business     | email      | you   |credit 
+**21**  |**22**   |**23**    |**24**  |**25**      |**26**       |**27**        |**28**      |**29** |**30** 
+your    | font    | 000      | money  | hp         | hpl         | george       | 650        | lab   | labs
+**31**  |**32**   |**33**    |**34**  |**35**      |**36**       |**37**        |**38**      |**39** |**40**
+telnet  | 857     | data     | 415    | 85         | technology  | 1999         | parts      | pm    | direct 
+**41**  |**42**   |**43**    |**44**  |**45**      |**46**       |**47**        |**48**      |**49** |**50**
+cs      | meeting | original |project | re         | edu         | table        | conference | ";"   | "("
+**51**  |**52**   |**53**    |**54**  |**55**      |**56**       |**57**        | **58**     |
+"["     | "!"     | "$"      | "#"    |capital avg |capital long |capital total | spam (1/0) |
+
+
+## Split the Data
+
+We need Test and Train data sets. As best as I can tell from the examples I read in our textbook and online both sets need to contain both positive and negative examples. I also read in several places that dividing your data into 80% Training and 20% Testing is a good place to start.
+
+Looking at the spam data the first 1,813 rows are spam (39.4%) and the remaining 2,788 are not (60.6%). I was unsure if my training data should be 50-50 or if I should try to maintain the same ratio I have in the data set. If I make the training set 80% of the rows, that would be 4,601 X .8 or 3,680.8 or 3,681 rows. I cannot make that many rows 50% spam, so I decide to make the test data set of 920 rows 50-50.
+
+I want 460 rows of spam and 460 rows of ham for my Test data set. Since the last spam row is 1,813 I can get my spam from rows 1,354 to 1,813 and my ham from rows 1,814 to 2,273. The code to make the Train and Test data set follow.
+
+```{r}
+test.data <- rbind(spambase.data[1354:2273, ])
+train.data <- rbind(spambase.data[1:1353, ])
+train.data <- rbind(train.data, spambase.data[2274:4601, ])
+```
+
+
+# The Models
+
+The steps for training a model is as follows:
+
+1. Create a document-term matrix; 
+2. Create a container; 
+3. Create a model by feeding a container to the machine learning algorithm
+
+You would think I could skip a step and get done much faster, since I do not need to process actual text to create a document-term matrix. The data I have seems to be a document-term matrix of some kind. However, I was not able to use it as is. I tried using the dataframe in the create_container() function and I tried using it again after turning the dataframe into a matrix. Neither method worked since the function requires a matrix in the tm package format.
+
+I did read some of the documentation for the tm and RTextTools packages in the hope of manually coercing my data into the appropriate matrix format to no avail. I did find after several searches the as.DocumentTermMatrix() function, which seemed to work.
+
+
+## Create the Container
+
+After looking at the functions required to classify my spam data I found I need an appropriate tm matrix with the training data at the top and test data following at the bottom. I also need the outcomes or column 58 pulled out as a separate vector. I combined my training and test data, pulled out the last column of outcomes, and converted it to the correct matrix, before calling the container function.
+
+```{r}
+spamdata <- rbind(train.data, test.data)
+outcomes <- spamdata$V58
+spamdata <- subset(spamdata, select = -V58)
+matrix <- as.DocumentTermMatrix(spamdata, weightTf)
+container <- create_container(matrix, t(outcomes), trainSize = 1:3681, testSize = 3682:4601, virgin=FALSE)
+str(matrix)
+str(container)
+```
+
+
+## Create the Models
+
+There are nine (9) models supported by RTextTools and they are listed below with a short description. I ran all 9 on my spam data set using the same "container". Three of the models did not work, giving an error message. The other 6 gave similar results. Details on the models and how they compare are at the end.
+
+* SVM - Support Vector Machines are supervised learning methods used for classification and regression
+* MAXENT - aka maximum entropy is a low-memory multinomial logistic regression model
+* SLDA - supervised latent Dirichlet allocation prediction model
+* BOOSTING - is a machine learning ensemble meta-algorithm for reducing bias primarily
+* BAGGING - aka bootstrap aggregation, averages multiple predictions for more accuracy
+* RF - random forest algorithm for classification and regression
+* GLMNET - fits a generalized linear model via penalized maximum likelihood
+* NNET - feed-forward neural network package
+* TREE - Tree models are techniques for recursively partitioning response variables into subsets
+
+
+```{r}
+set.seed(2015)
+# Support Vector Machines Model
+svm.model <- train_model(container, "SVM")
+svm.result <- classify_model(container, svm.model)
+svm.analytic <- create_analytics(container, svm.result)
+svm.doc <- svm.analytic@document_summary
+
+# Generalized Linear Model didn't work
+
+# Maximum Entropy Modeling
+maxent.model <- train_model(container, "MAXENT")
+maxent.result <- classify_model(container, maxent.model)
+maxent.analytic <- create_analytics(container, maxent.result)
+maxent.doc <- maxent.analytic@document_summary
+
+# Supervised Latent Dirichlet Allocation Model
+slda.model <- train_model(container, "SLDA")
+slda.result <- classify_model(container, slda.model)
+slda.analytic <- create_analytics(container, slda.result)
+slda.doc <- slda.analytic@document_summary
+
+# Boosting Model
+boosting.model <- train_model(container, "BOOSTING")
+boosting.result <- classify_model(container, boosting.model)
+boosting.analytic <- create_analytics(container, boosting.result)
+boosting.doc <- boosting.analytic@document_summary
+
+# Bagging aka bootstrap aggregation Model
+bagging.model <- train_model(container, "BAGGING")
+bagging.result <- classify_model(container, bagging.model)
+bagging.analytic <- create_analytics(container, bagging.result)
+bagging.doc <- bagging.analytic@document_summary
+
+# Random Forest Model
+rf.model <- train_model(container, "RF")
+rf.result <- classify_model(container, rf.model)
+rf.analytic <- create_analytics(container, rf.result)
+rf.doc <- rf.analytic@document_summary
+
+# Neural Network Model didn't work
+
+# Tree Model didn't work
+
+```
+
+# Results of Classifying (analytics)
+
+Out of the six (6) models that ran on the spam data five classified spam as spam with an accuracy over 80% and never mis-classified ham as spam (0%). The Other model had a false positive (mis-classifying ham as spam) rate of 3.9%, and true positive rate of only 24%. Details follow with a summary at the end.
+
+## Support Vector Machines Model
+
+This was the first test I ran and it gave some interesting results. If the voodoo I used to get the data into a container was correct, then these are great results (big IF, and no way to validate that I know). Going with the results I got I examine the MANUAL CODE column and the CONSENSUS CODE column. The MANUAL CODE is the outcome or spam coding for the Test data set. The Test data set was 920 rows divided evenly between spam and ham. When you list svm.doc$MANUAL_CODE you get 460 "1's" followed by 460 "0's", which is at least what I gave it.
+
+The CONSENSUS CODE is the scoring the model gave the email with "1" for spam and "0" for ham. True Positives are the number of times the model scored a piece of spam as spam, which is the number of times the CONSENSUS CODE is "1" in svm_spam.doc (MANUAL CODE = 1). If we divide this count by the total number of spam emails and multiply by 100, we get the percentage of True Positives (82%). Below I do the calculation and display the spam consensus code list, so you can see it visually.
+
+False Negatives, or the number of times spam was ID'd as ham, come out at 18%, which is  convenient (82 + 18 = 100%). We got the spam right 82% of the time and let 18% get through. On the other side of the ledger the data says we got the ham correct 100% of the time and labeled ham as spam zero times. If these results are correct that's a pretty good spam filter.
+
+```{r}
+# Support Vector Machines Model
+svm_spam.doc  <- svm.doc[svm.doc$MANUAL_CODE == 1, ]
+svm_ham.doc   <- svm.doc[svm.doc$MANUAL_CODE == 0, ]
+svm.true.pos  <- nrow(svm_spam.doc[svm_spam.doc$CONSENSUS_CODE == 1,]) / nrow(svm_spam.doc)
+svm.false.neg <- nrow(svm_spam.doc[svm_spam.doc$CONSENSUS_CODE == 0,]) / nrow(svm_spam.doc)
+svm.true.neg  <- nrow(svm_ham.doc[svm_ham.doc$CONSENSUS_CODE == 0,]) / nrow(svm_ham.doc)
+svm.false.pos <- nrow(svm_ham.doc[svm_ham.doc$CONSENSUS_CODE == 1,]) / nrow(svm_ham.doc)
+svm_spam.doc$CONSENSUS_CODE
+svm.true.pos
+svm.false.neg
+svm.true.neg
+svm.false.pos
+```
+
+
+## Generalized Linear Model
+
+This model would NOT run. It gave the following error message, complaining about my matrix. This calls into question whether my attempts to turn my data into a true tm package Document-Term-Matrix actually worked.
+
+glmnet.model <- train_model(container, "GLMNET")
+
+<span style="color:red">Error in validObject(.Object) : invalid class "dgRMatrix" object: slot j is not *strictly* increasing inside a column</span>
+
+
+## Maximum Entropy Modeling
+
+This model gavel similar results to the SVM model I ran first. The percentage of True Positives was 85%. False Negatives, or the number of times spam was ID'd as ham, come out at a convenient 15%. On the other side we got the ham correct 100% of the time and labeled ham as spam zero times again. I like that the results are similar and we improved the spam filter by about 3%, however this 100% on ham worries me.
+
+```{r}
+# Maximum Entropy Modeling
+maxent_spam.doc <- maxent.doc[maxent.doc$MANUAL_CODE == 1, ]
+maxent_ham.doc <- maxent.doc[maxent.doc$MANUAL_CODE == 0, ]
+maxent.true.pos <- nrow(maxent_spam.doc[maxent_spam.doc$CONSENSUS_CODE == 1,]) / nrow(maxent_spam.doc)
+maxent.false.neg <- nrow(maxent_spam.doc[maxent_spam.doc$CONSENSUS_CODE == 0,]) / nrow(maxent_spam.doc)
+maxent.true.neg <- nrow(maxent_ham.doc[maxent_ham.doc$CONSENSUS_CODE == 0,]) / nrow(maxent_ham.doc)
+maxent.false.pos <- nrow(maxent_ham.doc[maxent_ham.doc$CONSENSUS_CODE == 1,]) / nrow(maxent_ham.doc)
+maxent.true.pos
+maxent.false.neg
+maxent.true.neg
+maxent.false.pos
+```
+
+
+## Supervised Latent Dirichlet Allocation (SLDA) Model
+
+This model gave us different results. True Positives were not a 100%, but a high 96%, with a corresponding False Positive of 4%. The spam classifying was not so good, with True Positives only 24% of the time and False Negatives at 76%. This spam filter would let 75% of the spam get through.
+
+```{r}
+# Supervised Latent Dirichlet Allocation Modeling
+slda_spam.doc <- slda.doc[slda.doc$MANUAL_CODE == 1, ]
+slda_ham.doc <- slda.doc[slda.doc$MANUAL_CODE == 0, ]
+slda.true.pos <- nrow(slda_spam.doc[slda_spam.doc$CONSENSUS_CODE == 1,]) / nrow(slda_spam.doc)
+slda.false.neg <- nrow(slda_spam.doc[slda_spam.doc$CONSENSUS_CODE == 0,]) / nrow(slda_spam.doc)
+slda.true.neg <- nrow(slda_ham.doc[slda_ham.doc$CONSENSUS_CODE == 0,]) / nrow(slda_ham.doc)
+slda.false.pos <- nrow(slda_ham.doc[slda_ham.doc$CONSENSUS_CODE == 1,]) / nrow(slda_ham.doc)
+slda.true.pos
+slda.false.neg
+slda.true.neg
+slda.false.pos
+```
+
+
+## Boosting Model
+
+This model gave us a True Positive Rate of 83.5% (False Negatives = 16.5%). All ham was classified correctly at 100%.
+
+```{r}
+# Boosting Model
+boosting_spam.doc <- boosting.doc[boosting.doc$MANUAL_CODE == 1, ]
+boosting_ham.doc <- boosting.doc[boosting.doc$MANUAL_CODE == 0, ]
+boosting.true.pos <- nrow(boosting_spam.doc[boosting_spam.doc$CONSENSUS_CODE == 1,]) / nrow(boosting_spam.doc)
+boosting.false.neg <- nrow(boosting_spam.doc[boosting_spam.doc$CONSENSUS_CODE == 0,]) / nrow(boosting_spam.doc)
+boosting.true.neg <- nrow(boosting_ham.doc[boosting_ham.doc$CONSENSUS_CODE == 0,]) / nrow(boosting_ham.doc)
+boosting.false.pos <- nrow(boosting_ham.doc[boosting_ham.doc$CONSENSUS_CODE == 1,]) / nrow(boosting_ham.doc)
+boosting.true.pos
+boosting.false.neg
+boosting.true.neg
+boosting.false.pos
+```
+
+
+## Bagging Model
+
+This model gave us a True Positive Rate of 84% (False Negatives = 16%). All ham was classified correctly at 100%.
+
+```{r}
+# Bagging Model
+bagging_spam.doc <- bagging.doc[bagging.doc$MANUAL_CODE == 1, ]
+bagging_ham.doc <- bagging.doc[bagging.doc$MANUAL_CODE == 0, ]
+bagging.true.pos <- nrow(bagging_spam.doc[bagging_spam.doc$CONSENSUS_CODE == 1,]) / nrow(bagging_spam.doc)
+bagging.false.neg <- nrow(bagging_spam.doc[bagging_spam.doc$CONSENSUS_CODE == 0,]) / nrow(bagging_spam.doc)
+bagging.true.neg <- nrow(bagging_ham.doc[bagging_ham.doc$CONSENSUS_CODE == 0,]) / nrow(bagging_ham.doc)
+bagging.false.pos <- nrow(bagging_ham.doc[bagging_ham.doc$CONSENSUS_CODE == 1,]) / nrow(bagging_ham.doc)
+bagging.true.pos
+bagging.false.neg
+bagging.true.neg
+bagging.false.pos
+```
+
+
+## RF Model
+
+This model gave us a True Positive Rate of 84% (False Negatives = 16%). All ham was classified correctly at 100%.
+
+```{r}
+# RF Model
+rf_spam.doc <- rf.doc[rf.doc$MANUAL_CODE == 1, ]
+rf_ham.doc <- rf.doc[rf.doc$MANUAL_CODE == 0, ]
+rf.true.pos <- nrow(rf_spam.doc[rf_spam.doc$CONSENSUS_CODE == 1,]) / nrow(rf_spam.doc)
+rf.false.neg <- nrow(rf_spam.doc[rf_spam.doc$CONSENSUS_CODE == 0,]) / nrow(rf_spam.doc)
+rf.true.neg <- nrow(rf_ham.doc[rf_ham.doc$CONSENSUS_CODE == 0,]) / nrow(rf_ham.doc)
+rf.false.pos <- nrow(rf_ham.doc[rf_ham.doc$CONSENSUS_CODE == 1,]) / nrow(rf_ham.doc)
+rf.true.pos
+rf.false.neg
+rf.true.neg
+rf.false.pos
+```
+
+
+## NNET Model
+
+This model would NOT run. It gave the following error message, complaining about a dataframe. Unlike the other two models that didn't run, the train-model function worked on my container (without an error), but classify-model did not.
+
+nnet.model <- train_model(container, "NNET")
+
+nnet.result <- classify_model(container, nnet.model)
+
+<span style="color:red">Error in data.frame(as.character(nnet_pred), nnet_prob) : arguments imply differing number of rows: 0, 920</span>
+
+
+## Tree Model
+
+This is the third model that would NOT run. It gave the following error message, complaining about maximum depth reached. 
+
+tree.model <- train_model(container, "TREE")
+
+<span style="color:red">Error in tree(container.training_codes ~ ., data =  data.frame(as.matrix(container@training_matrix),  : maximum depth reached</span>
+
+
+# Summary
+
+This project was an adventure. I tried working through the example with the UK press releases in the textbook, but the data had changed just enough to not work as written in the book and to take too long to track down why. I did learn how to download a lot of press releases (I need to delete those).
+
+I moved on and tried to use the R packages used in the textbook to do the assignment. I needed to researched each step thoroughly just to move forward. I read a lot of R package documentation, but I found the R posts easier to follow. I lost track of the post that used as.DocumentTermMatrix(), but I believe it was mentioned on StackOverflow. Without it I would have been completely stuck trying to make my own version of a tm package Document-Text_Matrix.
+
+I would like to reference and thank an R-bloggers post by Dennis Lee that helped me get through the assignment. It made it seem possible with a clearly coded example. He used the SVM and MaxEnt models and got similar results to mine on a different set of spam. His SVM True-Positive rate was 86.8% compared to his MaxEnt rate of 85.3% (my MaxEnt performed the best at 84.6%). However, his False-Positives were 3.2% for SVM and 0.4% for MaxEnt. I conclude the MaxEnt is the winning model for both of us.
+
+I should also point out that his False-Positive rates makes me think that something is wrong with my original matrix. My consistent zero False-Positives is very suspicious. My summary table follows and the link to Mr, Lee's post is below.
+
+
+ Model     | True-Pos  | False-Neg | True-Neg  | False-Pos 
+---------- | --------- | --------- | --------- | ---------
+SVM        |      82.2 |      17.8 |     100.0 |       0.0
+GLMNET     |      N/A  |      N/A  |      N/A  |      N/A
+MAXENT     |      84.6 |      15.4 |     100.0 |       0.0
+SLDA       |      24.1 |      75.9 |      96.1 |       3.9
+BOOSTING   |      83.5 |      16.5 |     100.0 |       0.0
+BAGGING    |      83.7 |      16.3 |     100.0 |       0.0
+RF         |      84.4 |      15.6 |     100.0 |       0,0
+NNET       |      N/A  |      N/A  |      N/A  |      N/A
+TREE       |      N/A  |      N/A  |      N/A  |      N/A
+
+http://www.r-bloggers.com/classifying-emails-as-spam-or-ham-using-rtexttools/
+
+**Note: None of these models running on my "old" PC made me wait more than a minute or two. I don't know if that is evidence of a bad matrix or the speed of my old iron. I run R on a CyberPower tower PC with a an Intel Core 2 Duo CPU (E675) rated at 2.66 GHz and overclocked to 3.20 GHz with 4 Gb of RAM and a ReadyBoost flash drive of another 4 Gb. It runs a 64-bit version of Windows Pro (8.1) and a 64-bit version of R.**
