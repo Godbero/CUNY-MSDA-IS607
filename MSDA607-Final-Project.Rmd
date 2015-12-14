@@ -1,0 +1,325 @@
+---
+title: 'MSDA Final Project: Frost Days'
+author: "Robert Godbey"
+date: "December 5, 2015"
+output: 
+  html_document: 
+    toc: yes
+---
+
+
+# Introduction
+
+I started with the idea of looking at the possible correlation between access to locally grown fresh food and better student performance in school, Good-Food Equals Good-Grades, but was stymied by the breadth of data sources. It was going to take me months to define good grades and good food.
+
+Another idea came up while looking at the agriculture sites. Could I use weather data to predict useful information for food crop planting? At the big picture end of the question is climate change moving the best planting days (freeze or frost days)? At the narrow end of the question, when is the earliest I should plant my tomatoes this spring? This is a practical question I can use the answer to and the  information looks more focused.
+
+The job for me now is how best to predict the best planting date. My answer is to follow the data science workflow. I really like the simplicity and flow of Hadley Wickham's Collect --> Analyze --> Communicate, but it is hard to beat a good mnemonic, so I decided to layout the rest of this document using **OSEMN** (with the hope of making it awesome).
+
+**Library Packages Used**
+```{r, message=FALSE}
+library(rvest)          # To read in HTML table of Freeze-Frost Dates
+library(dplyr)          # To use the tbl_df and other functions
+library(randomForest)   # For attempted modeling
+```
+
+
+# Obtain Data
+
+The most important factor in determining when to plant any vegetable in your garden is the "LAST FROST DATE" in the spring, and the "FIRST FROST DATE" in the fall for your area. These dates for a given area are based on historical weather data from that area collected over a 30 year period and compiled by the National Climatic Data Center from over 5,800 Weather Monitoring Stations throughout the United States.
+
+For each Weather Monitoring Station, a FREEZE DAY is any day in the year that the temperature reaches 32°F or below. A FROST DAY is any day in the year that the temperature reaches 36°F or below. So why worry about FROST DAYS more so than FREEZE DAYS? Well, a Freeze is what will kill many plants. But, Weather Monitoring Stations are typically mounted four to six feet above the ground. During clear, calm, and cold nights the temperature at ground level, where your garden is, can become much colder and even freeze. This is why most gardeners play it safe by using Frost Days as planting guides.
+
+
+## Traditional Dates
+
+I wanted planting dates or Frost Days (dates) to compare to my analysis. My hope was to find some history of the Farmer's Almanac planting dates over time for comparison. What I found was at least two almanacs (The Old Farmer's Almanac and Farmers' Almanac), neither of which seemed to keep old predictions around on their websites. Unlike predicting the winter weather, they all seemed to use the National Climatic Data Center dates for planting (last frost day) based on the USDA Hardiness Zones.
+
+I found the best table form of the data on the [Organic Gardening site](http://organicgardening.about.com/od/organicgardening101/a/frostdatechart.htm) and reproduce it below. I used R to read in the web tables and make a dataframe to show that I could read in HTML. This table was simple enough I could have copied it manually or maybe even used a simple copy-and-paste and formatted the results.
+
+We should note that my home is in USDA Hardiness Zone 7, which gives the First Frost Date of October 15 and the Last Frost Date of April 15, so April 15 is my target date. We might also want to note that zone 1 has an incredibly short 1-month growing season.
+
+I considered this table and the zones to be the "old school" method. When I found a "New and Improved" method on [The How Do Gardner website](http://www.howdogardener.com/439-2/freeze-and-frost-dates) I expected newer data to give me an earlier date (warming trend). The site reads: "The National Climatic Data Center has recently released an entirely new data set, this one collected between 1981 and 2010." I entered my zip code into their new Freeze and Frost Day Calculator and discovered two things. My nearest weather monitoring station is named Vienna; and my last Frost Day is May 11 (last Freeze Day is April 27; Only a 10% chance of a Freeze/Frost after these dates).
+
+I assume this is May 11, 2016 and it is almost a month later than the April 15 from the table. I now have a date range to examine and a significant one for a farmer or gardener.
+
+**Freeze-Frost Data Table**
+```{r}
+freeze <- read_html("http://organicgardening.about.com/od/organicgardening101/a/frostdatechart.htm", encoding = "UTF-8")
+freeze <- html_nodes(freeze, "table")
+freeze <- html_table(freeze[[1]], header = TRUE)
+tbl_df(freeze)
+```
+
+
+## Weather Station Data
+
+I requested the "Daily Normals" from all the weather stations in Fairfax County, Virginia from the Global Historical Climatology Network (GHCN) of the The National Climatic Data Center of the National Oceanic and Atmospheric Administration (NOAA) of the United States. I received a CSV file of 100,197 observations and 33 variables.
+
+On first look the data seems to span the dates from September 1, 1950 to December 6, 2015. We can see the variables and sample data below. We see that there are forty-five (45) weather stations in Fairfax County and somehow that gives us forty-four (44) names, forty-two (42) elevations, forty-five (45) latitudes and forty-eight (48) longitudes. This hints at movement of some weather stations over the years. 
+
+A lot of data is missing with several fields having the value -9999, which the documentation said  indicates missing data or data that has not been received. This should be fine, because what the documentation calls the five core values (PRCP, SNOW, SNWD, TMAX, TMIN) seem to have values and should be all I need.
+
+**Fairfax County Weather Data**
+```{r}
+weather <- read.csv("https://raw.githubusercontent.com/Godbero/CUNY-MSDA-IS607/master/fcwd.csv", header = TRUE, stringsAsFactors = TRUE)
+str(weather)
+tbl_df(weather)
+```
+
+
+# Scrub Data
+
+The documentation for the data set says the five core values are:
+
+* PRCP = Precipitation (tenths of mm)
+* SNOW = Snowfall (mm)
+* SNWD = Snow depth (mm)
+* TMAX = Maximum temperature (tenths of degrees Celsius)
+* TMIN = Minimum temperature (tenths of degrees Celsius)
+
+The documentation explains that TMAX is the maximum temperature on that date measured in Celsius to tenths (e.g., 306 = 30.6 degrees Celsius). TMIN is the minimum temperature on that day measured in the same units. We are primarily interested in TMIN, but it makes sense to keep all five core values.
+
+We also need the date observed and the data on weather station location (at least until we determine the most complete data closest to me). We can get rid of the other columns and eventually narrow our data set to just seven (7) columns. On the other end, we can zero in on the weather station closest to me, drop the other 44 stations. This gives us the more manageable data set below.
+
+
+## Close & Complete Data
+
+The latitude of Reston, Virginia (where I live) is 38.9544 and the longitude is -77.3464. I decide to compare my location with the weather stations by comparing lat and long and counting observations by station (30 years of data from 1 station ~= 10,958 observations, I would love 2 or 3 times that).
+
+We start by using the Count function from dplyr to get the stations and their coordinates into a table with counts. We then do the lat and long math and add the columns. A difference of one degree in latitude is about 69 miles, which means a tenth would be 6.9 miles and a hundredth .69 miles. There are a lot of weather stations that are close to me. The table below drops lat and long, so the other columns will fit. The n column is the count of observations from that station and latdiff and longdiff measures the distance from Reston, VA.
+
+**Weather Stations in Fairfax County**
+```{r, warning=FALSE}
+stations <- count(weather, STATION, STATION_NAME, LATITUDE, LONGITUDE)
+stations$LATITUDE <- as.character(stations$LATITUDE)
+stations$LONGITUDE <- as.character(stations$LONGITUDE)
+latdiff <- as.numeric(stations$LATITUDE) - 38.9544
+longdiff <- as.numeric(stations$LONGITUDE) + 77.3464
+stations <- cbind(stations, latdiff, longdiff)
+stations <- arrange(stations, desc(latdiff), desc(longdiff))
+stations$STATION <- substr(stations$STATION, 7, 17)             # shorten station ID for fit
+subset(stations, select = c(-LATITUDE, -LONGITUDE))
+```
+
+
+## Selected Data
+
+The interesting thing about this data is how few observation there are from some of the stations. Dranesville, which is about 2 miles from me, has 1,064 readings, or less than 3 years worth. Since the one web site mentioned Vienna as my closest station and it also has the most data, I focused on that station. The Vienna station at row 16 has the most observations at 16,730. I found a few locations with Vienna in the name and few Vienna stations with the same ID, but different location data. I decided to pull these out and look more closely. 
+
+I looked at the most recent data for the first week of December 2015 and found four data sources for each day, however only station USC00448737, or 37, had a value for TMIN; US1VAFX0061, US1VAFX0040, and US1VAFX0051 all had -9999 for TMIN (they had values for precipitation). After spot checking and seeing the same pattern throughout the data set I decided to work with just station 37.
+
+**Vienna Weather Stations**
+```{r}
+weather <- subset(weather, subset = (substr(weather$STATION_NAME, 1, 6) == "VIENNA"))
+weather <- subset(weather, select = c(STATION, DATE, PRCP, SNOW, SNWD, TMAX, TMIN))
+tbl_df(weather)
+weather <- subset(weather, subset = (STATION == "GHCND:USC00448737"))
+weather <- weather[order(weather$DATE), ]
+tbl_df(weather)
+```
+
+
+After searching through the Station 37 data I found values for TMIN started being recorded on December 1, 1995. Before that date all the values for TMIN are recorded as -9999. After this date there are regular recorded values and the occasional -9999. I decided to take the subset from 12/1/1995 on as my scrubbed data set, but I was disappointment not to have more data to analyze. I took one last look to insure I did not pick up any duplicate dates or two observations on the same day (the number of observations and the number of unique dates are the same). And, I replaced all the -9999 in the core-five with NA, because -9999 would be a cold temperature. I went from over 100,000 observations  down to just over 7,000 (not my hoped for 30 years).
+
+**Scrubbed Final (small) Dataset**
+```{r}
+weather <- subset(weather, subset = (DATE >= "19951201"))
+tbl_df(weather)
+sapply(weather, function(x) length(unique(x)))
+weather$PRCP[weather$PRCP == -9999] <- NA
+weather$SNOW[weather$SNOW == -9999] <- NA
+weather$SNWD[weather$SNWD == -9999] <- NA
+weather$TMAX[weather$TMAX == -9999] <- NA
+weather$TMIN[weather$TMIN == -9999] <- NA
+tbl_df(weather)
+```
+
+
+# Explore Data
+
+We learned above that Freeze Days are days where the temperature is 32 degrees F or lower, which is equivalent to zero degree Celsius. We also learned that we are more interested in Frost Days, which are days where the temperature is 36 degrees F or lower. We need to convert 36 F to Celsius for a target temperature, which is (36 - 32) * 5/9 = 2.22 degrees C. Since TMIN is measured in tenths of degrees Celsius, we are looking for TMIN < 22. I added a column to the dataframe with the value set to true when TMIN < 22, and I summarized counts by month and year. Frost Days below shows that out of 7,284 observations, 121 are NA (no value for TMIN), 2,391 are frost-days and the rest have a TMIN > 2.2 degrees Celsius.
+
+**Frost Days**
+```{r}
+Frost <- (weather$TMIN < 22)
+Year <- substr(weather$DATE, 1, 4)
+Month <- substr(weather$DATE, 5, 6)
+weather <- cbind(weather, Frost, Year, Month)
+count(weather, Frost)
+```
+
+
+Using the Year and Month columns for convenience we see the years 1995 to 1998 below. The 1995 data adds up to 31 observations, which is correct since we only have December. The year 1996 has 121 frost-days + 230 warmer days + 15 NA's, which equals 366 (1996 must be a leap year). The year 1997 totals 365 with no NA's and so on. The break out by month shows similar counts and lets us examine the important months of April and May for me.
+
+**Years & Months with Frost Days**
+```{r}
+FrostYears <- count(weather, Year, Frost, sort = TRUE)
+FrostYears
+FrostMonths <- count(weather, Year, Month, Frost, sort = TRUE)
+FrostMonths
+```
+
+
+We also want to examine dates to see how often we had a Frost Day after April 15, and within that set how often they came after May 11 (my two target dates). To get the after April 15 Frost-Days I looked for frost from April 16 to June 30 of each year (>0415 & <0701). I did the same thing to get the Frost-Days after May 11. I stored both the frost-days after April 15 and May 11 in their own columns in the weather dataset for convenience. We can count the after April 15 frost-days the same way we did all the frost-days and if we subset when April is True we get the number of time there was a frost day after April 15 in a year. Same thing for May 11.
+
+**After April 15 Frost Days**
+```{r}
+April <- (weather$TMIN < 22) & (substr(weather$DATE, 5, 8) > '0415') & (substr(weather$DATE, 5, 8) < '0701')
+May <- (weather$TMIN < 22) & (substr(weather$DATE, 5, 8) > '0511') & (substr(weather$DATE, 5, 8) < '0701')
+weather <- cbind(weather, April, May)
+April15 <- count(weather, Year, April, sort = TRUE)
+April15 <- subset(April15, subset = April)
+April15
+```
+
+
+**After May 11 Frost Days**
+```{r}
+May11 <- count(weather, Year, May, sort = TRUE)
+May11 <- subset(May11, subset = May)
+May11
+```
+
+We can see above that we had 11 years where there were frost-days after April 15. Now that we are down to 20 years of data that is more than half the years or 55%. Not great odds for betting the crop. We can also see that the trend is not towards less frost-days after April 15, because the highest numbers we have are for 2013 and 2014. May fairs better with only two years where there were frost-days after May 11, or 10%.
+
+To help us visualize this I plotted the frost-days after April 15 by year. I added zeros for the years without frost-days to smooth out the plot.
+
+**After April 15 Frost Days**
+```{r}
+tmp <- c('1998', FALSE, 0)
+April15 <- rbind(April15, tmp)
+tmp <- c('2000', FALSE, 0)
+April15 <- rbind(April15, tmp)
+tmp <- c('2003', FALSE, 0)
+April15 <- rbind(April15, tmp)
+tmp <- c('2006', FALSE, 0)
+April15 <- rbind(April15, tmp)
+tmp <- c('2007', FALSE, 0)
+April15 <- rbind(April15, tmp)
+tmp <- c('2009', FALSE, 0)
+April15 <- rbind(April15, tmp)
+tmp <- c('2011', FALSE, 0)
+April15 <- rbind(April15, tmp)
+tmp <- c('2012', FALSE, 0)
+April15 <- rbind(April15, tmp)
+tmp <- c('2015', FALSE, 0)
+April15 <- rbind(April15, tmp)
+April15$Year <- as.character(April15$Year)
+April15 <- April15[order(April15$Year), ]
+plot(April15$Year, April15$n, type = "l", col = "red", main = "Frost Days After April 15th", xlab = "Year", ylab = "Days")
+```
+
+
+I thought it might be interesting to look at the average TMIN and TMAX by year to see if any trends show up. I pull all the April data out of weather and then aggregate by year taking the mean of TMAX and TMIN. The plot of TMIN follows. To me it looked more variable than the frost-days. It would be easy to use this same method on other months or a whole year, but I am not seeing the value here.
+
+```{r}
+AprilTemps <- subset(weather, Month == "04")
+AprilTemps <- subset(AprilTemps, select = c(DATE, Year, TMAX, TMIN))
+AprilAvg <- aggregate(AprilTemps[, 3:4], list(AprilTemps$Year), mean, na.rm = TRUE)
+plot(AprilAvg$Group.1, AprilAvg$TMIN, type = "l", col = "green", main = "Mean TMIN in April", xlab = "Year", ylab = "Celsius")
+```
+
+
+# Model Data
+
+My only modeling experience was our spam filter modeling in class. Perhaps that is why I could only think of a model that predicts whether there will be a frost after April 15 given the data for the previous months. Each observation for my model spans the "non-growing" season for my area (October to March) and has the number of Frost Days for each month, the average TMAX and TMIN for each month, the total snowfall and snow depth, and the total precipitation per month.
+
+
+## Model Structure
+
+We would add a logical True-False column for frost-days after April 15 for that season. The thing that seems different from our spam example is that we could also include the number of Frost-Days after April 15 in our observation (it's not just spam, but it's spam 6 times). I understood that the algorithms we used did not understand the data in the columns, so I guess number of post April 15 frost-days could just be another column. My model would look like this:
+
+* Season = 5 characters, e.g., 96-97
+* SPR = total precipitation (mm) in September = numeric or integer
+* SSN = total snowfall (mm) in September = numeric or integer
+* SSD = total snow depth (mm) in September = numeric or integer
+* STX = mean daily max temperature (tenths of degrees C) = numeric or integer
+* STM = mean daily minimum temperature (tenths of degrees C) = numeric or integer
+* Same six value for October: ODF, OPR, OSN, OSD, OSX, OTM
+* Same six value for November: NDF, NPR, NSN, NSD, NSX, NTM
+* Same six value for December: DDF, DPR, DSN, DSD, DSX, DTM
+* Same six value for January: JDF, JPR, JSN, JSD, JSX, JTM
+* Same six value for February: FDF, FPR, FSN, FSD, FSX, FTM
+* Same six value for March: MDF, MPR, MSN, MSD, MSX, MTM
+* AFD = number of Frost-Days after April 15th this season = numeric or integer
+* Frost = True if minimum temp below 2.2 C after April 15th, else False (& AFD = 0) = logical
+
+With my twenty years of data that would only give us 19 observations to train a model, which seems like to low a number. I wrote a function below to create the model dataset and give it a try. I also wanted to use XFD = # of frost-days in Xember for each month in a season, but did not get that working in time.
+
+**Frost Model Dataframe**
+```{r}
+
+for (i in 1996:2014) {
+        # Create season label, e.g. 1996-1997
+        season <- paste(as.character(i), as.character(i + 1), sep = "-")
+        # Pull out the data for this season
+        season.df <- subset(weather, subset = (weather$DATE >= paste(as.character(i), "0901", sep = "") & weather$DATE <= paste(as.character(i + 1), "0331", sep = "")))
+        # Drop the columns we don't need
+        season.df <- subset(season.df, select = (c(Month, PRCP, SNOW, SNWD, TMAX, TMIN)))
+        # Find the average daily max and min temps
+        Avg <- aggregate(season.df[, 5:6], list(season.df$Month), mean, na.rm = TRUE)
+        # Find the total rain, snow, and snow depth
+        Tot <- aggregate(season.df[, 2:4], list(season.df$Month), sum, na.rm = TRUE)
+        # Make a season row for the model dataframe
+        newRow <- data.frame(Season = season, SPR = Tot[4, 2], SSN = Tot[4, 3], SSD = Tot[4, 4], STX = round(Avg[4, 2], 0), STN = round(Avg[4, 3], 0), OPR = Tot[5, 2], OSN = Tot[5, 3], OSD = Tot[5, 4], OTX = round(Avg[5, 2], 0), OTN = round(Avg[5, 3], 0), NPR = Tot[6, 2], NSN = Tot[6, 3], NSD = Tot[6, 4], NTX = round(Avg[6, 2], 0), NTN = round(Avg[6, 3], 0), DPR = Tot[7, 2], DSN = Tot[7, 4], DSD = Tot[7, 4], DTX = round(Avg[7, 2], 0), DTN = round(Avg[7, 3], 0), JPR = Tot[1, 2], JSN = Tot[1, 3], JSD = Tot[1, 4], JTX = round(Avg[1, 2], 0), JTN = round(Avg[1, 3], 0), FPR = Tot[2, 2], FSN = Tot[2, 3], FSD = Tot[2, 4], FTX = round(Avg[2, 2], 0), FTN = round(Avg[2, 2], 0), MPR = Tot[3, 2], MSN = Tot[3, 3], MSD = Tot[3, 4], MTX = round(Avg[3, 2], 0), MTN = round(Avg[3, 2], 0), FDC = 0, AA15 = FALSE)
+        if (i == 1996) {
+                FrostModel <- newRow 
+                
+        } else {
+                FrostModel <- rbind(FrostModel, newRow)
+        }
+}
+
+for (i in 1:18) {
+        # Number of Frost-Days after April 15 during this season
+        FrostModel[i, 37] <- April15[i + 1, 3]
+        FrostModel[i, 38] <- April15[i + 1, 2]
+        FrostModel$FDC <- as.numeric(FrostModel$FDC)
+        FrostModel$AA15 <- as.logical(FrostModel$AA15)
+}
+FrostModel
+str(FrostModel)
+```
+
+
+## Random Forest
+
+I tried running a Random Forest on my small occurrence data set, but I could not get the function to work. I am sure I don't understand the model well enough to set up the data correctly. You will see below that I get an error about missing objects that I do not understand. I did change out values for a non-logical field in case that was mine problem, but got the same error.
+
+```{r}
+# For reproducibility; 123 has no particular meaning
+set.seed(123)
+index <- sample(1:nrow(FrostModel),size = 0.7*nrow(FrostModel))
+train <- FrostModel[index,]
+test <- FrostModel[-index,]
+nrow(train)
+nrow(test)
+
+# Create a random forest with 500 trees; couldn't get this to work
+rf <- randomForest(AA15 ~ SPR + SSN + SSD + STX +STN + OPR + OSN + OSD + OTX + OTN + NPR + NSN + NSD + NTX + NTN + DPR + DSN + DSD + DTX + DTN + JPR + JSN + JSD + JTX + JTN + FPR + FSN + FSD + FTX + FTN + MPR + MSN + MSD + MTX + MTN + FDC, data = train, importance = TRUE, ntree=500)
+
+# How many trees are needed to reach the minimum error estimate? 
+# This is a simple problem; it appears that about 71 trees would be enough.
+which.min(rf$mse)
+
+# Using the importance()  function to calculate the importance of each variable
+imp <- as.data.frame(sort(importance(rf)[,1],decreasing = TRUE),optional = T)
+names(imp) <- "% Inc MSE"
+imp
+```
+
+
+# Interpret Data
+
+There is not a lot of interpretation to make here. I found out that actually getting a BIG data set is more difficult than it seems. They may have a lot of data (>100,000 observations), but when you boil it down to what you can use it reduces a lot (~7,000 observations).
+
+Based on my simple analysis I discovered that planting crops after May 11 is a better idea for my area than closer to April 15. There is only a 10% chance of a Frost-Day after May 11 and over a 50% chance of one after April 15.
+
+I diffenently need to learn more about modeling in general and Random Forest specially. The warning message makes it sound like I was trying to do regression and I was aiming for classification. The importance of the variables makes sense to me. The number of Frost-Days after April 15 (FDC) was the most important at almost 11%. The next two are the average maximum daily temperature in March and the average daily minimum for March at about 4% each. September, October and Novemeber temperatures come up next. Snow fall and rain seemed to be of less importance.
+
+I would try using data closer to April next time, maybe January, February and March to see if I can get closer with less data and work.
+
+I would like to credit Pedro M. on R-Bloggers for a good example on Radon Forest.
+http://www.r-bloggers.com/part-4a-modelling-predicting-the-amount-of-rain/
+
